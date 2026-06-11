@@ -1,0 +1,31 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load(":vunit_toolchain.bzl", "current_vunit_toolchain_lib")
+
+exports_files([
+    "BUILD.vunit_hdl.bazel",
+])
+
+current_vunit_toolchain_lib(
+    name = "current_vunit_toolchain_lib",
+    tags = ["manual"],
+    # Requires a registered `//vunit:toolchain_type` to resolve. The in-tree
+    # toolchain is linux-only (GHDL BCR ships linux binaries only), so the
+    # proxy rule has to be linux-only as well — otherwise toolchain
+    # resolution fails on macOS/windows for any target that depends on this.
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "bzl_lib",
+    srcs = glob(["*.bzl"]),
+    visibility = ["//vunit:__pkg__"],
+    deps = [
+        "//vunit/private/simulators:bzl_lib",
+        "@rules_cc//cc/common",
+        "@rules_venv//python:defs_bzl",
+        "@rules_venv//python/venv:bzl_lib",
+        "@rules_verilog//verilog:defs_bzl",
+        "@rules_vhdl//vhdl:defs_bzl",
+    ],
+)

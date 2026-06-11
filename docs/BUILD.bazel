@@ -1,0 +1,115 @@
+load("@io_bazel_stardoc//stardoc:stardoc.bzl", "stardoc")
+load("@rules_rust_mdbook//:defs.bzl", "mdbook", "mdbook_server")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+
+stardoc(
+    name = "vunit_test_doc",
+    out = "src/vunit_test.md",
+    input = "//vunit:vunit_test.bzl",
+    table_of_contents_template = "@io_bazel_stardoc//stardoc:templates/markdown_tables/table_of_contents.vm",
+    tags = ["manual"],
+    deps = ["//vunit:bzl_lib"],
+)
+
+stardoc(
+    name = "vunit_toolchain_doc",
+    out = "src/vunit_toolchain.md",
+    input = "//vunit:vunit_toolchain.bzl",
+    table_of_contents_template = "@io_bazel_stardoc//stardoc:templates/markdown_tables/table_of_contents.vm",
+    tags = ["manual"],
+    deps = ["//vunit:bzl_lib"],
+)
+
+stardoc(
+    name = "vunit_ghdl_sim_doc",
+    out = "src/vunit_ghdl_sim.md",
+    input = "//vunit:vunit_ghdl_sim.bzl",
+    table_of_contents_template = "@io_bazel_stardoc//stardoc:templates/markdown_tables/table_of_contents.vm",
+    tags = ["manual"],
+    deps = ["//vunit:bzl_lib"],
+)
+
+stardoc(
+    name = "vunit_nvc_sim_doc",
+    out = "src/vunit_nvc_sim.md",
+    input = "//vunit:vunit_nvc_sim.bzl",
+    table_of_contents_template = "@io_bazel_stardoc//stardoc:templates/markdown_tables/table_of_contents.vm",
+    tags = ["manual"],
+    deps = ["//vunit:bzl_lib"],
+)
+
+stardoc(
+    name = "vunit_modelsim_sim_doc",
+    out = "src/vunit_modelsim_sim.md",
+    input = "//vunit:vunit_modelsim_sim.bzl",
+    table_of_contents_template = "@io_bazel_stardoc//stardoc:templates/markdown_tables/table_of_contents.vm",
+    tags = ["manual"],
+    deps = ["//vunit:bzl_lib"],
+)
+
+stardoc(
+    name = "vunit_questa_sim_doc",
+    out = "src/vunit_questa_sim.md",
+    input = "//vunit:vunit_questa_sim.bzl",
+    table_of_contents_template = "@io_bazel_stardoc//stardoc:templates/markdown_tables/table_of_contents.vm",
+    tags = ["manual"],
+    deps = ["//vunit:bzl_lib"],
+)
+
+stardoc(
+    name = "vunit_riviera_sim_doc",
+    out = "src/vunit_riviera_sim.md",
+    input = "//vunit:vunit_riviera_sim.bzl",
+    table_of_contents_template = "@io_bazel_stardoc//stardoc:templates/markdown_tables/table_of_contents.vm",
+    tags = ["manual"],
+    deps = ["//vunit:bzl_lib"],
+)
+
+stardoc(
+    name = "vunit_activehdl_sim_doc",
+    out = "src/vunit_activehdl_sim.md",
+    input = "//vunit:vunit_activehdl_sim.bzl",
+    table_of_contents_template = "@io_bazel_stardoc//stardoc:templates/markdown_tables/table_of_contents.vm",
+    tags = ["manual"],
+    deps = ["//vunit:bzl_lib"],
+)
+
+mdbook(
+    name = "book",
+    srcs = glob(["src/**/*.md"]) + [
+        ":vunit_activehdl_sim_doc",
+        ":vunit_ghdl_sim_doc",
+        ":vunit_modelsim_sim_doc",
+        ":vunit_nvc_sim_doc",
+        ":vunit_questa_sim_doc",
+        ":vunit_riviera_sim_doc",
+        ":vunit_test_doc",
+        ":vunit_toolchain_doc",
+    ],
+    book = "book.toml",
+    # Windows builds are typically super slow in CI so they're avoided.
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+)
+
+alias(
+    name = "docs",
+    actual = ":book",
+    tags = ["manual"],
+)
+
+mdbook_server(
+    name = "server",
+    book = ":book",
+    tags = ["manual"],
+)
+
+sh_binary(
+    name = "publish_book",
+    srcs = ["publish_book.sh"],
+    data = [":book"],
+    env = {"BOOK_DIR": "$(rootpath :book)"},
+    tags = ["manual"],
+)

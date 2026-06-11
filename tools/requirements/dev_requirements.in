@@ -1,0 +1,13 @@
+# Development requirements
+#
+# `vunit_hdl` is fetched via `http_archive` in MODULE.bazel rather than
+# req-compile because its sdist setup.py defeats metadata extraction.
+# `colorama` is vunit_hdl's only runtime dep and IS resolvable here.
+
+colorama
+
+black
+isort
+mypy
+pylint
+pytest-cov

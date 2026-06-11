@@ -1,0 +1,67 @@
+---
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: compile_requirements
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "The py_reqs_compiler target to run"
+        default: "//tools/requirements:update"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux_x86_64
+            runs-on: ubuntu-latest
+          - os: linux_aarch64
+            runs-on: ubuntu-24.04-arm
+          - os: macos_aarch64
+            runs-on: macos-latest
+          - os: windows_x86_64
+            runs-on: windows-latest
+
+    runs-on: ${{ matrix.runs-on }}
+    name: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      # GitHub-hosted Windows runners have the workspace checkout on D:
+      # but the user temp dir defaults to C:. That cross-volume layout
+      # breaks `os.path.relpath` inside rules_python's runfiles lib
+      # during `bazel run` (`ValueError: path is on mount 'C:', start
+      # on mount 'D:'`). Move Bazel's output root + temp dirs onto D:
+      # so everything lands on the same volume.
+      - name: Setup Bazelrc (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "TEMP=$env:RUNNER_TEMP" >> "$env:GITHUB_ENV"
+          echo "TMP=$env:RUNNER_TEMP" >> "$env:GITHUB_ENV"
+          echo "startup --output_user_root=D:/bzl" > ./user.bazelrc
+      - name: Compile requirements
+        if: runner.os == 'Windows'
+        run: |
+          bazel run "$env:TARGET" "--" "--upgrade" "--verbose"
+        env:
+          TARGET: ${{ github.event.inputs.target }}
+      - name: Compile requirements
+        if: runner.os != 'Windows'
+        run: |
+          bazel run "${TARGET}" "--" "--upgrade" "--verbose"
+        env:
+          TARGET: ${{ github.event.inputs.target }}
+      - name: Display results
+        shell: bash
+        run: |
+          set -e
+          echo "<details>" >> "${GITHUB_STEP_SUMMARY}"
+          echo "" >> "${GITHUB_STEP_SUMMARY}"
+          echo '```' >> "${GITHUB_STEP_SUMMARY}"
+          cat "tools/requirements/requirements_${{ matrix.os }}.txt" >> "${GITHUB_STEP_SUMMARY}"
+          echo '```' >> "${GITHUB_STEP_SUMMARY}"
+          echo "" >> "${GITHUB_STEP_SUMMARY}"
+          echo "</details>" >> "${GITHUB_STEP_SUMMARY}"

@@ -1,0 +1,75 @@
+###############################################################################
+## Bazel Configuration Flags
+##
+## `.bazelrc` is a Bazel configuration file.
+## https://bazel.build/docs/best-practices#bazelrc-file
+###############################################################################
+
+# https://bazel.build/reference/command-line-reference#flag--enable_platform_specific_config
+common --enable_platform_specific_config
+
+# Enable the only currently supported report type
+# https://bazel.build/reference/command-line-reference#flag--combined_report
+coverage --combined_report=lcov
+
+# Avoid fully cached builds reporting no coverage and failing CI
+# https://bazel.build/reference/command-line-reference#flag--experimental_fetch_all_coverage_outputs
+coverage --experimental_fetch_all_coverage_outputs
+
+# https://github.com/bazelbuild/bazel/issues/8195
+build --incompatible_disallow_empty_glob=true
+
+# https://github.com/bazelbuild/bazel/issues/12821
+build --nolegacy_external_runfiles
+
+# Disable legacy __init__.py behavior which is known to conflict with
+# modern python versions (3.9+)
+build --incompatible_default_to_explicit_init_py
+
+# https://github.com/bazelbuild/bazel/issues/23043.
+build --incompatible_autoload_externally=
+
+###############################################################################
+## Python lint / format aspects (rules_venv)
+##
+## Point each tool at the repo-root config unconditionally — the
+## `--@rules_venv//python/<tool>:config=...` settings only apply when the
+## matching aspect runs.
+###############################################################################
+
+# black ----------------------------------------------------------------------
+build --@rules_venv//python/black:config=//:pyproject.toml
+build:black --aspects=@rules_venv//python/black:py_black_aspect.bzl%py_black_aspect
+build:black --output_groups=+py_black_checks
+
+# isort ----------------------------------------------------------------------
+build --@rules_venv//python/isort:config=//:.isort.cfg
+build:isort --aspects=@rules_venv//python/isort:py_isort_aspect.bzl%py_isort_aspect
+build:isort --output_groups=+py_isort_checks
+
+# mypy -----------------------------------------------------------------------
+build --@rules_venv//python/mypy:config=//:.mypy.ini
+build:mypy --aspects=@rules_venv//python/mypy:py_mypy_aspect.bzl%py_mypy_aspect
+build:mypy --output_groups=+py_mypy_checks
+
+# pylint ---------------------------------------------------------------------
+build --@rules_venv//python/pylint:config=//:.pylintrc.toml
+build:pylint --aspects=@rules_venv//python/pylint:py_pylint_aspect.bzl%py_pylint_aspect
+build:pylint --output_groups=+py_pylint_checks
+
+# Composite — run all four at once: `bazel build --config=strict //...`.
+build:strict --config=black
+build:strict --config=isort
+build:strict --config=mypy
+build:strict --config=pylint
+test --config=strict
+
+###############################################################################
+## Custom user flags
+##
+## This should always be the last thing in the `.bazelrc` file to ensure
+## consistent behavior when setting flags in that file as `.bazelrc` files are
+## evaluated top to bottom.
+###############################################################################
+
+try-import %workspace%/user.bazelrc

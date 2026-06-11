@@ -1,0 +1,106 @@
+load("@rules_venv//python:py_library.bzl", "py_library")
+load("@rules_vhdl//vhdl:defs.bzl", "vhdl_library")
+load("@rules_vunit//vunit:vunit_ghdl_sim.bzl", "vunit_ghdl_sim")
+load("@rules_vunit//vunit:vunit_test.bzl", "vunit_test")
+load("@rules_vunit//vunit:vunit_toolchain.bzl", "vunit_toolchain")
+
+# Constraint settings referenced from `MODULE.bazel`'s `requirements.parse`
+# call. `rules_req_compile`'s extension resolves these labels in the
+# calling module's repo, so they must be local.
+config_setting(
+    name = "linux-aarch64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "linux-x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "macos-aarch64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "windows-x86_64",
+    constraint_values = [
+        "@platforms//os:windows",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# VUnit python library + GHDL sim, wired with a custom toolchain.
+#
+# Every GHDL-bound target carries `target_compatible_with = linux` because
+# the `@ghdl` BCR module only ships a binary for linux. Without the tag,
+# `bazel build //...` on macOS / windows would fail trying to resolve the
+# exec-cfg `ghdl` attribute. The `vunit_test` target below is tagged for
+# the same reason.
+# ---------------------------------------------------------------------------
+
+GHDL_COMPATIBLE_WITH = ["@platforms//os:linux"]
+
+py_library(
+    name = "vunit",
+    deps = [
+        "@vunit_hdl",
+        "@vunit_pip_deps//colorama",
+    ],
+)
+
+vunit_ghdl_sim(
+    name = "vunit_ghdl",
+    ghdl = "@ghdl",
+    target_compatible_with = GHDL_COMPATIBLE_WITH,
+    vhdl_libs = ["@ghdl//:vhdl_libs_v08"],
+)
+
+vunit_toolchain(
+    name = "vunit_toolchain_def",
+    default_sim = "ghdl",
+    simulators = {":vunit_ghdl": "ghdl"},
+    target_compatible_with = GHDL_COMPATIBLE_WITH,
+    vunit = ":vunit",
+)
+
+toolchain(
+    name = "vunit_toolchain",
+    target_compatible_with = GHDL_COMPATIBLE_WITH,
+    toolchain = ":vunit_toolchain_def",
+    toolchain_type = "@rules_vunit//vunit:toolchain_type",
+)
+
+# ---------------------------------------------------------------------------
+# The actual test.
+# ---------------------------------------------------------------------------
+
+vhdl_library(
+    name = "adder",
+    srcs = ["adder.vhd"],
+    library = "tb_lib",
+)
+
+vhdl_library(
+    name = "tb_adder",
+    srcs = ["tb_adder.vhd"],
+    library = "tb_lib",
+    deps = [":adder"],
+)
+
+vunit_test(
+    name = "adder_test",
+    module = ":tb_adder",
+    sim = "ghdl",
+    target_compatible_with = GHDL_COMPATIBLE_WITH,
+)
