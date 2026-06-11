@@ -1,0 +1,24 @@
+load("@rules_vhdl//vhdl:defs.bzl", "vhdl_library")
+load("//vunit:defs.bzl", "vunit_test")
+
+vhdl_library(
+    name = "counter",
+    srcs = ["counter.vhd"],
+    library = "tb_lib",
+)
+
+vhdl_library(
+    name = "tb_counter",
+    srcs = ["tb_counter.vhd"],
+    library = "tb_lib",
+    deps = [":counter"],
+)
+
+vunit_test(
+    name = "counter_test",
+    module = ":tb_counter",
+    sim = "nvc",
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
+)

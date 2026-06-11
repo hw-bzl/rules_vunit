@@ -1,0 +1,56 @@
+load("@rules_venv//python:py_library.bzl", "py_library")
+load("//vunit:vunit_ghdl_sim.bzl", "vunit_ghdl_sim")
+load("//vunit:vunit_nvc_sim.bzl", "vunit_nvc_sim")
+load("//vunit:vunit_toolchain.bzl", "vunit_toolchain")
+
+# Every target below depends on `@ghdl` / `@nvc`, whose BCR modules
+# currently only ship a binary for `linux_x86_64` (the only platform
+# with a working bazel build). Tag the in-tree toolchain plumbing with
+# `target_compatible_with` so `bazel build //...` / `bazel test //...`
+# silently skip these on other hosts instead of failing to resolve the
+# exec dependency.
+
+GHDL_COMPATIBLE_WITH = ["@platforms//os:linux"]
+
+vunit_ghdl_sim(
+    name = "vunit_ghdl",
+    ghdl = "@ghdl",
+    target_compatible_with = GHDL_COMPATIBLE_WITH,
+    vhdl_libs = ["@ghdl//:vhdl_libs_v08"],
+)
+
+vunit_nvc_sim(
+    name = "vunit_nvc",
+    nvc = "@nvc",
+    target_compatible_with = GHDL_COMPATIBLE_WITH,
+    vhdl_libs = ["@nvc//:vhdl_libs"],
+)
+
+py_library(
+    name = "vunit",
+    deps = [
+        "@vunit_hdl",
+        "@vunit_pip_deps//colorama",
+    ],
+)
+
+vunit_toolchain(
+    name = "vunit_toolchain",
+    default_sim = "ghdl",
+    simulators = {
+        ":vunit_ghdl": "ghdl",
+        ":vunit_nvc": "nvc",
+    },
+    target_compatible_with = GHDL_COMPATIBLE_WITH,
+    vunit = ":vunit",
+    # run_py defaults to //vunit/private:run.py — override per-toolchain when
+    # custom orchestration (test attributes, hooks, post_run callbacks) is needed.
+)
+
+toolchain(
+    name = "toolchain",
+    target_compatible_with = GHDL_COMPATIBLE_WITH,
+    toolchain = ":vunit_toolchain",
+    toolchain_type = "//vunit:toolchain_type",
+    visibility = ["//visibility:public"],
+)

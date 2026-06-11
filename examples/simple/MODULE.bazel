@@ -1,0 +1,67 @@
+"""Minimal downstream example for rules_vunit (GHDL).
+
+Demonstrates the full self-contained setup a consumer needs: its own
+`vunit_pip_deps` lockset and its own `vunit_toolchain`. The
+`@rules_vunit//vunit/toolchain` target is rules_vunit's *internal*
+toolchain (used only for the in-tree test suite) — downstream projects
+roll their own using `vunit_ghdl_sim` / `vunit_nvc_sim` /
+`vunit_modelsim_sim` / etc. and a `vunit_toolchain`.
+"""
+
+module(
+    name = "rules_vunit_simple_example",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "ghdl", version = "6.0.0.bcr.2")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_req_compile", version = "1.1.0")
+bazel_dep(name = "rules_venv", version = "0.18.0")
+bazel_dep(name = "rules_vhdl", version = "0.1.1")
+bazel_dep(name = "rules_vunit", version = "0.1.0")
+
+# Point at the rules_vunit source tree alongside this example. Downstream
+# users would drop this override in favor of the BCR version.
+local_path_override(
+    module_name = "rules_vunit",
+    path = "../..",
+)
+
+# `vunit_hdl` is sdist-only on PyPI and its setup.py defeats
+# `rules_req_compile`'s metadata extraction (circular import via
+# `vunit.builtins`). Fetch the tarball directly and wrap it in a
+# py_library instead. The runtime dep on `colorama` still goes through
+# req-compile alongside any lint tools the downstream project wants.
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "vunit_hdl",
+    # Reuse the build file + llvm-jit backend-detection patch shipped by
+    # rules_vunit so both workspaces stay in lockstep.
+    build_file = "@rules_vunit//vunit/private:BUILD.vunit_hdl.bazel",
+    patch_args = ["-p1"],
+    patches = ["@rules_vunit//vunit/private:vunit_hdl_llvm_jit_backend.patch"],
+    sha256 = "3a6f0e19eaa1e79899676aa4cdce95ec8f649002362c4458c3e0412d0f7d0912",
+    strip_prefix = "vunit_hdl-4.7.1",
+    urls = ["https://files.pythonhosted.org/packages/18/a4/b8a53f6ba286cc5b37199859a65583b4a574be68700fd35f7debe99231c0/vunit_hdl-4.7.1.tar.gz"],
+)
+
+# colorama is vunit_hdl's only runtime dep and IS resolvable via
+# req-compile (it ships wheels). Pin a lock per supported platform.
+# Labels in `requirements_locks` must be local to this workspace —
+# the `rules_req_compile` extension can't resolve labels in other repos.
+requirements = use_extension("@rules_req_compile//extensions:python.bzl", "requirements")
+requirements.parse(
+    name = "vunit_pip_deps",
+    requirements_locks = {
+        "//:requirements_linux_aarch64.txt": "//:linux-aarch64",
+        "//:requirements_linux_x86_64.txt": "//:linux-x86_64",
+        "//:requirements_macos_aarch64.txt": "//:macos-aarch64",
+        "//:requirements_windows_x86_64.txt": "//:windows-x86_64",
+    },
+)
+use_repo(requirements, "vunit_pip_deps")
+
+# Register the custom vunit_toolchain defined in this workspace's
+# top-level BUILD.bazel.
+register_toolchains("//:vunit_toolchain")

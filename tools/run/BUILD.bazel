@@ -1,0 +1,28 @@
+load("@rules_venv//python:py_binary.bzl", "py_binary")
+
+# `run.py` lives under `//tools/run/` rather than `//vunit/private/` so the
+# `:run` py_binary's runfiles tree doesn't put `vunit/` (a Bazel package
+# path) at the workspace root, where it would collide with the `vunit/`
+# Python package shipped by `@vunit_hdl//:vunit_hdl` and break `import
+# vunit` resolution.
+exports_files(
+    ["run.py"],
+    visibility = ["//visibility:public"],
+)
+
+# Lint/format coverage for run.py — black/isort/mypy/pylint aspects run
+# against py_binary/py_library targets, so this target exists purely so
+# `--config=strict` checks the script. The toolchain references
+# `//tools/run:run.py` directly (not this binary) at test time.
+#
+# Constrained to linux because the only dep,
+# `:current_vunit_toolchain_lib`, requires a registered
+# `//vunit:toolchain_type` and the in-tree toolchain is linux-only.
+py_binary(
+    name = "run",
+    srcs = ["run.py"],
+    main = "run.py",
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//visibility:public"],
+    deps = ["//vunit/private:current_vunit_toolchain_lib"],
+)

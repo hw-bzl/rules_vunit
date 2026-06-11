@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+env:
+  BAZEL_STARTUP_FLAGS: --bazelrc=${{ github.workspace }}/.github/github.bazelrc
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Bazel ${{ matrix.bazel-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-2022]
+        bazel-version: ["7.*", "8.*", "9.*"]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bazel
+        uses: bazel-contrib/setup-bazel@0.14.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: ${{ github.workflow }}-${{ matrix.os }}-${{ matrix.bazel-version }}
+
+      # GitHub-hosted Windows runners have the workspace checkout on D:
+      # but the user temp dir (where Bazel stages runfiles for `bazel
+      # run`) defaults to C:. That cross-volume layout breaks
+      # `os.path.relpath` inside rules_python's runfiles lib
+      # (`ValueError: path is on mount 'C:', start on mount 'D:'`).
+      # Move Bazel's output root + temp dirs onto D: so everything ends
+      # up on the same volume.
+      - name: Setup Bazelrc (Windows)
+        if: startswith(runner.os, 'Windows')
+        run: |
+          echo "TEMP=$env:RUNNER_TEMP" >> "$env:GITHUB_ENV"
+          echo "TMP=$env:RUNNER_TEMP" >> "$env:GITHUB_ENV"
+          echo "startup --output_user_root=D:/bzl" > ./user.bazelrc
+
+      - name: Run all tests (Unix)
+        if: startswith(runner.os, 'Windows') != true
+        env:
+          USE_BAZEL_VERSION: ${{ matrix.bazel-version }}
+        run: bazel ${BAZEL_STARTUP_FLAGS} test //...
+
+      - name: Run all tests (Windows)
+        if: startswith(runner.os, 'Windows')
+        env:
+          USE_BAZEL_VERSION: ${{ matrix.bazel-version }}
+        run: bazel $env:BAZEL_STARTUP_FLAGS test //...
+
+      - name: Run example module tests (Unix)
+        if: startswith(runner.os, 'Windows') != true
+        env:
+          USE_BAZEL_VERSION: ${{ matrix.bazel-version }}
+        working-directory: examples/simple
+        run: bazel ${BAZEL_STARTUP_FLAGS} test //...
+
+      - name: Run example module tests (Windows)
+        if: startswith(runner.os, 'Windows')
+        env:
+          USE_BAZEL_VERSION: ${{ matrix.bazel-version }}
+        working-directory: examples/simple
+        run: bazel $env:BAZEL_STARTUP_FLAGS test //...

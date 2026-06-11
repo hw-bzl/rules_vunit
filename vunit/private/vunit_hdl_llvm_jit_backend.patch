@@ -1,0 +1,35 @@
+Teach VUnit's GHDL backend detector about the `llvm-jit` backend.
+
+GHDL has had four backends for a while: mcode, llvm, llvm-jit, gcc.
+VUnit's `GHDLInterface.determine_backend` regex mapping only covers
+three (mcode/llvm/gcc), so any GHDL built with `--with-backend=llvm-jit`
+fails detection with
+
+    AssertionError: No known GHDL back-end could be detected
+    from running 'ghdl --version'
+
+even though the binary works. The BCR `ghdl@6.0.0.bcr.1` module's
+non-x86_64 builds select `llvm-jit` (because `mcode` is x86-only),
+so the failure is observed end-to-end on aarch64 hosts running our
+in-tree tests.
+
+This patch adds an `llvm-jit` entry to the mapping. Treating it as a
+distinct backend value (rather than collapsing it into `llvm`) keeps
+the existing branches correct: `_has_output_flag` returns False for
+JIT backends, and `supports_coverage` returns False because gcov
+needs the gcc backend — both behaviours are right for `llvm-jit`.
+
+Drop this patch when bumping to a VUnit release that recognises the
+backend upstream.
+
+diff --git a/vunit/sim_if/ghdl.py b/vunit/sim_if/ghdl.py
+--- a/vunit/sim_if/ghdl.py
++++ b/vunit/sim_if/ghdl.py
+@@ -128,6 +128,7 @@
+         mapping = {
+             r"mcode (JIT )?code generator": "mcode",
+             r"llvm (\d+\.\d+\.\d+ )?code generator": "llvm",
++            r"LLVM JIT code generator": "llvm-jit",
+             r"GCC (back-end|\d+\.\d+\.\d+) code generator": "gcc",
+         }
+         output = cls._get_version_output(prefix)

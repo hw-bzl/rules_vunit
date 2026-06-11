@@ -1,0 +1,18 @@
+load("@rules_venv//python:defs.bzl", "py_library")
+
+exports_files(
+    ["vunit_process_wrapper.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "vunit_process_wrapper",
+    srcs = ["vunit_process_wrapper.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        # The wrapper itself just orchestrates subprocesses; it doesn't
+        # `import vunit`. The active toolchain's `vunit` library reaches
+        # the test via `toolchain.run_py` (a `py_binary`) instead.
+        "@rules_venv//python/runfiles",
+    ],
+)

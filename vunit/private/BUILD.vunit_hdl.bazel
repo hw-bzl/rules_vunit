@@ -1,0 +1,23 @@
+# Build file injected into the `vunit_hdl` http_archive by `MODULE.bazel`.
+#
+# Mirrors what upstream's `setup.py` packages:
+#   - all *.tcl anywhere under vunit/
+#   - everything under vunit/vhdl/ (vunit_context, run_pkg, check_pkg, OSVVM, ...)
+#   - .sv/.svh under vunit/verilog/ (setup.py also lists .v, but upstream
+#     ships no .v files; omitting that pattern to satisfy
+#     --incompatible_disallow_empty_glob)
+
+load("@rules_venv//python:py_library.bzl", "py_library")
+
+py_library(
+    name = "vunit_hdl",
+    srcs = glob(["vunit/**/*.py"]),
+    data = glob([
+        "vunit/**/*.tcl",
+        "vunit/vhdl/**",
+        "vunit/verilog/**/*.sv",
+        "vunit/verilog/**/*.svh",
+    ]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)

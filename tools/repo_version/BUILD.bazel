@@ -1,0 +1,13 @@
+load("@rules_venv//python/venv:defs.bzl", "py_venv_test")
+
+py_venv_test(
+    name = "version_test",
+    srcs = ["version_test.py"],
+    data = [
+        "//:MODULE.bazel",
+        "//:version.bzl",
+    ],
+    deps = [
+        "@rules_venv//python/runfiles",
+    ],
+)
