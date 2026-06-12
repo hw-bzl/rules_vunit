@@ -1,0 +1,286 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>vunit_toolchain - rules_vunit</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="favicon.svg">
+        <link rel="shortcut icon" href="favicon.png">
+        <link rel="stylesheet" href="css/variables.css">
+        <link rel="stylesheet" href="css/general.css">
+        <link rel="stylesheet" href="css/chrome.css">
+        <link rel="stylesheet" href="css/print.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="FontAwesome/css/font-awesome.css">
+        <link rel="stylesheet" href="fonts/fonts.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" href="highlight.css">
+        <link rel="stylesheet" href="tomorrow-night.css">
+        <link rel="stylesheet" href="ayu-highlight.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root to javascript -->
+        <script>
+            var path_to_root = "";
+            var default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "navy" : "light";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="toc.js"></script>
+    </head>
+    <body>
+    <div id="body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                var theme = localStorage.getItem('mdbook-theme');
+                var sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            var theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            var sidebar = null;
+            var sidebar_toggle = document.getElementById("sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+            }
+            sidebar_toggle.checked = sidebar === 'visible';
+            html.classList.remove('sidebar-visible');
+            html.classList.add("sidebar-" + sidebar);
+        </script>
+
+        <nav id="sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="toc.html"></iframe>
+            </noscript>
+            <div id="sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="menu-bar-hover-placeholder"></div>
+                <div id="menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="sidebar-toggle" class="icon-button" for="sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="sidebar">
+                            <i class="fa fa-bars"></i>
+                        </label>
+                        <button id="theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="theme-list">
+                            <i class="fa fa-paint-brush"></i>
+                        </button>
+                        <ul id="theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="ayu">Ayu</button></li>
+                        </ul>
+                        <button id="search-toggle" class="icon-button" type="button" title="Search. (Shortkey: s)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="S" aria-controls="searchbar">
+                            <i class="fa fa-search"></i>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">rules_vunit</h1>
+
+                    <div class="right-buttons">
+                        <a href="print.html" title="Print this book" aria-label="Print this book">
+                            <i id="print-button" class="fa fa-print"></i>
+                        </a>
+                        <a href="https://github.com/hw-bzl/rules_vunit" title="Git repository" aria-label="Git repository">
+                            <i id="git-repository-button" class="fa fa-github"></i>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="search-wrapper" class="hidden">
+                    <form id="searchbar-outer" class="searchbar-outer">
+                        <input type="search" id="searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="searchresults-outer" aria-describedby="searchresults-header">
+                    </form>
+                    <div id="searchresults-outer" class="searchresults-outer hidden">
+                        <div id="searchresults-header" class="searchresults-header"></div>
+                        <ul id="searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="content" class="content">
+                    <main>
+                        <!-- Generated with Stardoc: http://skydoc.bazel.build -->
+<p>vunit_toolchain</p>
+<h2 id="rules"><a class="header" href="#rules">Rules</a></h2>
+<ul>
+<li><a href="#vunit_toolchain">vunit_toolchain</a></li>
+</ul>
+<p><a id="vunit_toolchain"></a></p>
+<h2 id="vunit_toolchain"><a class="header" href="#vunit_toolchain">vunit_toolchain</a></h2>
+<pre>
+load("@rules_vunit//vunit:vunit_toolchain.bzl", "vunit_toolchain")
+
+vunit_toolchain(<a href="#vunit_toolchain-name">name</a>, <a href="#vunit_toolchain-default_sim">default_sim</a>, <a href="#vunit_toolchain-run_py">run_py</a>, <a href="#vunit_toolchain-simulators">simulators</a>, <a href="#vunit_toolchain-vunit">vunit</a>)
+</pre>
+<p>Define a toolchain for <code>vunit_*</code> rules.</p>
+<p>The toolchain bundles a <code>vunit</code> Python library, a set of HDL simulators
+that <code>vunit_test</code> targets can select between via their <code>sim</code> attribute,
+and the orchestration <code>run.py</code> the rule invokes at test time. Register
+an instance with the standard <code>toolchain(...)</code> wrapper to make it
+discoverable.</p>
+<h3 id="registering-simulators"><a class="header" href="#registering-simulators">Registering simulators</a></h3>
+<p>Each entry in <code>simulators</code> is a <code>vunit_*_sim</code> target keyed by the
+<em>string</em> name that <code>vunit_test(sim = ...)</code> will use to select it.
+Names are user-chosen — common conventions are <code>"ghdl"</code>, <code>"nvc"</code>,
+<code>"modelsim"</code>, <code>"questa"</code>. Each name must be unique within the dict.</p>
+<pre><code class="language-python">load("@rules_vunit//vunit:vunit_ghdl_sim.bzl", "vunit_ghdl_sim")
+load("@rules_vunit//vunit:vunit_toolchain.bzl", "vunit_toolchain")
+
+vunit_ghdl_sim(
+    name = "vunit_ghdl",
+    ghdl = "@ghdl",
+    vhdl_libs = ["@ghdl//:vhdl_libs_v08"],
+)
+
+vunit_toolchain(
+    name = "my_vunit_toolchain",
+    vunit = "//path/to:vunit_py_library",
+    default_sim = "ghdl",
+    simulators = {":vunit_ghdl": "ghdl"},
+    # run_py defaults to //vunit/private:run.py.
+)
+
+toolchain(
+    name = "my_toolchain",
+    toolchain = ":my_vunit_toolchain",
+    toolchain_type = "@rules_vunit//vunit:toolchain_type",
+)
+</code></pre>
+<p>Add <code>register_toolchains("//path/to:my_toolchain")</code> to <code>MODULE.bazel</code>
+ahead of <code>//vunit/toolchain</code> to override the default. <code>default_sim</code>
+chooses which simulator runs when a <code>vunit_test</code> omits its own <code>sim</code>
+attribute; it's optional, but if set must name one of the keys in
+<code>simulators</code>.</p>
+<h3 id="customising-runpy"><a class="header" href="#customising-runpy">Customising <code>run.py</code></a></h3>
+<p>The default <code>run.py</code> (shipped at <code>//tools/run:run.py</code>) reads a JSON
+descriptor from <code>VUNIT_LIBRARIES_JSON</code>, declares each library with
+<code>vu.add_library(...)</code> / <code>lib.add_source_file(...)</code>, and calls
+<code>vu.main()</code>. Override it via the <code>run_py</code> attribute when you need extra
+configuration — custom test attributes, <code>set_sim_option(...)</code> calls,
+<code>post_run</code> hooks, etc. The wrapper always sets:</p>
+<ul>
+<li><code>VUNIT_LIBRARIES_JSON</code> — path to the resolved library/sources JSON.</li>
+<li><code>VUNIT_OUTPUT_PATH</code> — sandboxed directory to pass as <code>-o</code>.</li>
+<li><code>VUNIT_XUNIT_XML</code> — path to write the xunit XML to (pass as <code>-x</code>).</li>
+</ul>
+<p>The script runs inside the venv composed by the <code>vunit_test</code> rule:
+<code>toolchain.vunit</code> is on <code>sys.path</code>, plus anything the test pulls in via
+its own <code>deps</code> attribute. So a custom <code>run.py</code> just needs to <code>import vunit</code> and any helper packages declared on the test target.</p>
+<p>Per-simulator API and wiring details live in the
+<a href="./simulators.html">Simulators</a> section.</p>
+<p><strong>ATTRIBUTES</strong></p>
+<div class="table-wrapper"><table><thead><tr><th style="text-align: left">Name</th><th style="text-align: left">Description</th><th style="text-align: left">Type</th><th style="text-align: left">Mandatory</th><th style="text-align: left">Default</th></tr></thead><tbody>
+<tr><td style="text-align: left"><a id="vunit_toolchain-name"></a>name</td><td style="text-align: left">A unique name for this target.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels#target-names">Name</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>
+<tr><td style="text-align: left"><a id="vunit_toolchain-default_sim"></a>default_sim</td><td style="text-align: left">An optional default simulator to use.</td><td style="text-align: left">String</td><td style="text-align: left">optional</td><td style="text-align: left"><code>""</code></td></tr>
+<tr><td style="text-align: left"><a id="vunit_toolchain-run_py"></a>run_py</td><td style="text-align: left">The Python orchestration script the <code>vunit_test</code> rule invokes. Defaults to a shipped driver that wires VUnit up from a JSON library descriptor; override with your own <code>.py</code> when you need custom orchestration (hooks, per-test attributes, etc.). Python deps for the script come from the toolchain's <code>vunit</code> py_library plus the test's <code>deps</code> — both are stitched into the venv that runs the script.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">Label</a></td><td style="text-align: left">optional</td><td style="text-align: left"><code>"@rules_vunit//tools/run:run.py"</code></td></tr>
+<tr><td style="text-align: left"><a id="vunit_toolchain-simulators"></a>simulators</td><td style="text-align: left">A mapping of <code>vunit_*_sim</code> targets to their matching simulator names. Every target must provide <code>VUnitSimInfo</code>.</td><td style="text-align: left"><a href="https://bazel.build/rules/lib/dict">Dictionary: Label -&gt; String</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>
+<tr><td style="text-align: left"><a id="vunit_toolchain-vunit"></a>vunit</td><td style="text-align: left">The <code>vunit</code> python library.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">Label</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>
+</tbody></table>
+</div>
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="vunit_test.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <i class="fa fa-angle-left"></i>
+                            </a>
+
+                            <a rel="next prefetch" href="simulators.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <i class="fa fa-angle-right"></i>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="vunit_test.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <i class="fa fa-angle-left"></i>
+                    </a>
+
+                    <a rel="next prefetch" href="simulators.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <i class="fa fa-angle-right"></i>
+                    </a>
+            </nav>
+
+        </div>
+
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="elasticlunr.min.js"></script>
+        <script src="mark.min.js"></script>
+        <script src="searcher.js"></script>
+
+        <script src="clipboard.min.js"></script>
+        <script src="highlight.js"></script>
+        <script src="book.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+    </div>
+    </body>
+</html>
