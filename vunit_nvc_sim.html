@@ -184,6 +184,14 @@ TreeArtifacts side-by-side under a single root and points
 <code>NVC_LIBPATH</code> at it so nvc finds every shipped library (STD, IEEE,
 NVC, plus the SYNOPSYS / VITAL extras inside IEEE) at simulation
 time.</p>
+<h3 id="coverage"><a class="header" href="#coverage">Coverage</a></h3>
+<p>VUnit has no NVC coverage integration upstream — <code>vu.set_sim_option</code>
+exposes <code>nvc.elab_flags</code>/<code>nvc.sim_flags</code>/<code>nvc.a_flags</code>, but there's
+no shipped recipe for routing NVC's <code>--cover</code> instrumentation through
+those, and <code>nvc --cover-export</code> only emits Cobertura. Rather than
+invent a sim-side path here, this rule omits coverage. The generic
+<code>VUnitSimInfo.coverage</code> field stays available for the commercial
+simulators (Mentor UCDB, Aldec ACDB) where a real bridge exists.</p>
 <p><strong>ATTRIBUTES</strong></p>
 <div class="table-wrapper"><table><thead><tr><th style="text-align: left">Name</th><th style="text-align: left">Description</th><th style="text-align: left">Type</th><th style="text-align: left">Mandatory</th><th style="text-align: left">Default</th></tr></thead><tbody>
 <tr><td style="text-align: left"><a id="vunit_nvc_sim-name"></a>name</td><td style="text-align: left">A unique name for this target.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels#target-names">Name</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>

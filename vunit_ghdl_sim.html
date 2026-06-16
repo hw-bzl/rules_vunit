@@ -182,21 +182,14 @@ its <code>vu.main()</code> at test time using sources surfaced through runfiles.
 libraries from the BCR <code>ghdl</code> module — most projects want
 <code>["@ghdl//:vhdl_libs_v08"]</code>.</p>
 <h3 id="coverage"><a class="header" href="#coverage">Coverage</a></h3>
-<p>When <code>coverage = True</code> is set on a <code>vunit_test</code> resolving to this
-simulator, <code>ghdl_compile</code> publishes
-<code>{"ghdl.a_flags": ["--coverage"], "ghdl.elab_flags": ["--coverage"]}</code>
-via the sim-agnostic <code>VUNIT_COVERAGE_SIM_OPTIONS</code> env contract that
-the default <code>run.py</code> reads (see <code>_configure_coverage</code> in
-<code>//tools/run:run.py</code>). The default driver applies the dict verbatim
-via <code>vu.set_sim_option(...)</code>; no GHDL-specific code lives in the
-driver.</p>
-<p>TODO: GHDL only emits coverage data when built with the <code>gcc</code> backend.
-The BCR <code>ghdl</code> module ships only the <code>mcode</code> and <code>llvm-jit</code> backends —
-neither supports coverage — so the wired-up <code>--coverage</code> flags are a
-no-op (or runtime error) against a stock BCR build. A consumer who
-points <code>vunit_ghdl_sim(ghdl = ...)</code> at their own GHDL+gcc binary
-picks up real coverage out of these flags. The rules_vunit CI cannot
-exercise this path today.</p>
+<p>GHDL only emits coverage when built with the <code>gcc</code> backend; the BCR
+<code>ghdl</code> module ships only <code>mcode</code> and <code>llvm-jit</code>, neither of which
+support it. Wiring up coverage flags here would be a no-op (or
+runtime error) against a stock BCR build, so this rule omits the
+sim-side coverage path. The generic <code>VUnitSimInfo.coverage</code> field
+remains available for downstream toolchains that point
+<code>vunit_ghdl_sim(ghdl = ...)</code> at a GHDL+gcc binary and want to thread
+gcov output through <code>bazel coverage</code>.</p>
 <p><strong>ATTRIBUTES</strong></p>
 <div class="table-wrapper"><table><thead><tr><th style="text-align: left">Name</th><th style="text-align: left">Description</th><th style="text-align: left">Type</th><th style="text-align: left">Mandatory</th><th style="text-align: left">Default</th></tr></thead><tbody>
 <tr><td style="text-align: left"><a id="vunit_ghdl_sim-name"></a>name</td><td style="text-align: left">A unique name for this target.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels#target-names">Name</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>
