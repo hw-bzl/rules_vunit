@@ -1,0 +1,22 @@
+load("@rules_venv//python:py_binary.bzl", "py_binary")
+
+# Sim-agnostic Cobertura XML -> LCOV translator. Downstream toolchains
+# whose commercial simulator emits Cobertura (Mentor, Aldec, ...) can
+# wire this directly as `VUnitSimInfo.coverage.tool` so `bazel
+# coverage` lands an lcov report at `$COVERAGE_OUTPUT_FILE`.
+py_binary(
+    name = "cobertura_to_lcov",
+    srcs = ["cobertura_to_lcov.py"],
+    main = "cobertura_to_lcov.py",
+    visibility = ["//visibility:public"],
+)
+
+# `assert_lcov_has_hits` is a generic lcov verifier — checks that a
+# merged lcov report contains nonzero coverage hits for at least one
+# of the named source files. Ships for downstream consumers that want
+# to add a coverage smoke test to their own CI.
+py_binary(
+    name = "assert_lcov_has_hits",
+    srcs = ["assert_lcov_has_hits.py"],
+    visibility = ["//visibility:public"],
+)

@@ -129,6 +129,7 @@ def _vunit_nvc_sim_impl(ctx):
         direct = lib_root_files,
         transitive = [ctx.attr.nvc[DefaultInfo].default_runfiles.files],
     )
+
     return [
         VUnitSimInfo(
             all_files = all_files,
@@ -168,6 +169,16 @@ TreeArtifacts side-by-side under a single root and points
 `NVC_LIBPATH` at it so nvc finds every shipped library (STD, IEEE,
 NVC, plus the SYNOPSYS / VITAL extras inside IEEE) at simulation
 time.
+
+### Coverage
+
+VUnit has no NVC coverage integration upstream — `vu.set_sim_option`
+exposes `nvc.elab_flags`/`nvc.sim_flags`/`nvc.a_flags`, but there's
+no shipped recipe for routing NVC's `--cover` instrumentation through
+those, and `nvc --cover-export` only emits Cobertura. Rather than
+invent a sim-side path here, this rule omits coverage. The generic
+`VUnitSimInfo.coverage` field stays available for the commercial
+simulators (Mentor UCDB, Aldec ACDB) where a real bridge exists.
 """,
     implementation = _vunit_nvc_sim_impl,
     attrs = {

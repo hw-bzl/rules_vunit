@@ -215,22 +215,66 @@ def _vunit_test_impl(ctx):
 
     # Precompiled libs the test should link before compiling its own
     # sources. The wrapper's per-format runner patch emits the link
-    # directive (e.g. `vmap -link` for Aldec). `format:vendor:rlocationpath`
-    # — vendor lets the runner apply ecosystem quirks (e.g. Xilinx adds
-    # `xil_defaultlib.glbl` as a sibling top).
+    # directive (e.g. `vmap -link` for Aldec). Encoded as
+    # `format:vendor:flags:rlocationpath`, where `flags` is a comma-
+    # separated subset of `{links_secureip, provides_glbl}` advertising
+    # ecosystem quirks the run.py needs to apply (e.g. `-L secureip` link
+    # flag, glbl sibling-top injection). `vendor` is advisory only — the
+    # behavioral hooks read the typed flags, not the vendor string.
     for lib in ctx.attr.precompiled_libs:
         lib_info = lib[VUnitPrecompiledLibraryInfo]
-        args.add("--precompiled_lib_dir={}:{}:{}".format(
+        flags = []
+        if lib_info.links_secureip:
+            flags.append("links_secureip")
+        if lib_info.provides_glbl:
+            flags.append("provides_glbl")
+        args.add("--precompiled_lib_dir={}:{}:{}:{}".format(
             lib_info.format,
             lib_info.vendor,
+            ",".join(flags),
             _rlocationpath(lib_info.library_dir, ctx.workspace_name),
         ))
-    if ctx.attr.coverage:
+
+    # Coverage is gated solely by `bazel coverage` (via
+    # `ctx.configuration.coverage_enabled`, which Bazel flips on whenever
+    # `--collect_code_coverage` is in effect — `bazel coverage` sets it
+    # implicitly). No per-target attr. We use the configuration flag
+    # rather than `ctx.coverage_instrumented()` because the latter
+    # additionally requires the rule to produce an `InstrumentedFilesInfo`
+    # provider — meaningful for source-language rules where Bazel tracks
+    # which files to instrument, but a bad fit for HDL where the simulator
+    # decides what to instrument from its compile list. The artifact
+    # lands under VUnit's output dir, which the wrapper points at
+    # `TEST_UNDECLARED_OUTPUTS_DIR/vunit_out` so Bazel gathers it without
+    # the rule needing a declared output.
+    coverage_runfiles = ctx.runfiles()
+    if ctx.configuration.coverage_enabled:
         args.add("--coverage")
-        if ctx.outputs.coverage_output:
-            args.add("--coverage_output={}".format(
-                _rlocationpath(ctx.outputs.coverage_output, ctx.workspace_name),
+
+        # When the resolved sim ships a coverage post-processor, plumb the
+        # tool + its data glob + its args template so the wrapper can
+        # translate the sim's raw coverage output into lcov at
+        # `$COVERAGE_OUTPUT_FILE`. Sims that don't have coverage support
+        # (the commercial stubs, GHDL until its gcc backend is wired)
+        # leave `coverage = None`; the wrapper then no-ops the post-step.
+        if sim_info.coverage:
+            # `sim_info.coverage.tool` is a Target — pull its executable
+            # File for the wrapper arg AND its default_runfiles so the
+            # whole tool (launcher + interpreter + helper data) is
+            # available to the test at runtime. A `File` would only
+            # ship the launcher script and miss the venv_config /
+            # interpreter / sibling .py files rules_venv-based
+            # binaries need to start up.
+            tool_exec = sim_info.coverage.tool[DefaultInfo].files_to_run.executable
+            args.add("--coverage_tool={}".format(
+                _rlocationpath(tool_exec, ctx.workspace_name),
             ))
+            args.add("--coverage_data_glob={}".format(sim_info.coverage.data_glob))
+            for a in sim_info.coverage.args:
+                args.add("--coverage_arg={}".format(a))
+            coverage_runfiles = ctx.runfiles(files = [tool_exec]).merge(
+                sim_info.coverage.tool[DefaultInfo].default_runfiles,
+            )
 
     args_file = ctx.actions.declare_file("{}.args.txt".format(ctx.label.name))
     ctx.actions.write(
@@ -269,6 +313,7 @@ def _vunit_test_impl(ctx):
     ).merge_all([
         dep_info.runfiles,
         sim_output.runfiles,
+        coverage_runfiles,
     ] + [
         target[DefaultInfo].default_runfiles
         for target in ctx.attr.data
@@ -294,28 +339,18 @@ def _vunit_test_impl(ctx):
             files = depset([executable]),
             runfiles = runfiles,
         ),
+        coverage_common.instrumented_files_info(
+            ctx,
+            source_attributes = ["module"],
+            dependency_attributes = ["module"],
+            extensions = ["vhd", "vhdl", "v", "sv", "vh", "svh"],
+        ),
     ]
 
 vunit_test = rule(
     doc = "Run a VUnit test over the given HDL libraries.",
     implementation = _vunit_test_impl,
     attrs = {
-        "coverage": attr.bool(
-            doc = ("Enable per-simulator coverage instrumentation when " +
-                   "the test runs. The toggle is sim-agnostic; what each " +
-                   "simulator does with it is per-sim (e.g. Riviera-PRO " +
-                   "adds `-acdb_cov`). When True, the process wrapper " +
-                   "sets `VUNIT_COVERAGE=1` so the toolchain's `run.py` " +
-                   "can configure VUnit accordingly."),
-            default = False,
-        ),
-        "coverage_output": attr.output(
-            doc = ("Optional declared output path the toolchain's `run.py` " +
-                   "writes the coverage artifact to (Riviera ACDB, " +
-                   "Mentor UCDB, GHDL gcov, …). When set, the process " +
-                   "wrapper exposes the path via `VUNIT_COVERAGE_OUTPUT`. " +
-                   "Only meaningful when `coverage = True`."),
-        ),
         "data": attr.label_list(
             doc = "Additional runtime data used by the test.",
             allow_files = True,

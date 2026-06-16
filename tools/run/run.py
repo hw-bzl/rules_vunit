@@ -10,28 +10,29 @@ Wrapper-supplied environment:
     VUNIT_XUNIT_XML:             xunit report path (forwarded as -x)
     VUNIT_PRECOMPILED_LIBS_JSON: optional path to a JSON describing precompiled
                                  library sets to link. Format:
-                                 `[{"simulator": <name>, "library_dir": <path>}, ...]`.
+                                 `[{"format": <name>, "vendor": <name>,
+                                    "links_secureip": <bool>,
+                                    "provides_glbl": <bool>,
+                                    "library_dir": <path>}, ...]`.
                                  The default driver ignores it; consumers that
                                  need precompiled-library linking provide a
                                  `run.py` override that emits the simulator's
-                                 link directive (e.g. `vmap -link` for Aldec).
-    VUNIT_COVERAGE:              "1" when `coverage = True` on the test. The
-                                 default driver applies any `set_sim_option`
-                                 entries declared via VUNIT_COVERAGE_SIM_OPTIONS
-                                 (see below) — the dispatch is sim-agnostic.
+                                 link directive (e.g. `vmap -link` for Aldec)
+                                 and acts on the typed ecosystem flags.
+    VUNIT_COVERAGE:              "1" when `bazel coverage` is the invocation
+                                 (gated by `ctx.coverage_instrumented()` on
+                                 the `vunit_test` rule). The default driver
+                                 applies any `set_sim_option` entries declared
+                                 via `VUNIT_COVERAGE_SIM_OPTIONS` (see below)
+                                 — dispatch is sim-agnostic.
     VUNIT_COVERAGE_SIM_OPTIONS:  JSON-encoded `{set_sim_option_key: value}`
                                  dict, populated by the active `vunit_*_sim`
                                  rule's `compile` function whenever
-                                 `coverage = True`. Each entry is forwarded
-                                 verbatim to `vu.set_sim_option(key, value)`
-                                 so all simulator-specific knowledge stays
-                                 in the sim integration, not in this script.
-    VUNIT_COVERAGE_OUTPUT:       declared coverage artifact path (Bazel-tracked
-                                 output). Set when `coverage_output` is set on
-                                 the test. The default driver does NOT aggregate
-                                 sim-side coverage artifacts into this path —
-                                 custom drivers write their simulator's
-                                 coverage DB there at end-of-run.
+                                 `ctx.coverage_instrumented()` is True. Each
+                                 entry is forwarded verbatim to
+                                 `vu.set_sim_option(key, value)` so all
+                                 simulator-specific knowledge stays in the
+                                 sim integration, not in this script.
 """
 
 import json
@@ -73,12 +74,21 @@ def _configure_coverage(vu: VUnit) -> None:
 
     Knowledge of how to enable coverage for a given simulator lives in
     that sim's ``compile`` function (in its ``vunit_*_sim`` rule). The
-    integration declares the work as a JSON-encoded
-    ``{vunit_set_sim_option_key: value}`` dict via the
-    ``VUNIT_COVERAGE_SIM_OPTIONS`` env var; this loop is intentionally
+    integration declares the work as a JSON-encoded dict via the
+    ``VUNIT_COVERAGE_SIM_OPTIONS`` env var, with two sub-dicts:
+
+        {
+          "compile_options": {"<key>": <value>, ...},
+          "sim_options":     {"<key>": <value>, ...},
+        }
+
+    VUnit splits per-file compile options (e.g. ``nvc.a_flags`` —
+    flags passed to ``nvc -a``) from per-config sim options (e.g.
+    ``ghdl.elab_flags``); the two go through different setters
+    (``vu.set_compile_option`` and ``vu.set_sim_option`` respectively).
+    Both sub-dicts are optional. This loop is intentionally
     sim-agnostic, so adding a new simulator's coverage support is a
-    sim-side change with no edit here. Only the GHDL integration
-    populates the env today.
+    sim-side change with no edit here.
 
     TODO: aggregation of per-test sim-side coverage artifacts (gcov
     ``.gcda``/``.gcno``, Mentor UCDB, Aldec ACDB, …) into
@@ -92,7 +102,10 @@ def _configure_coverage(vu: VUnit) -> None:
     options_json = os.environ.get("VUNIT_COVERAGE_SIM_OPTIONS")
     if not options_json:
         return
-    for key, value in json.loads(options_json).items():
+    options = json.loads(options_json)
+    for key, value in options.get("compile_options", {}).items():
+        vu.set_compile_option(key, value)
+    for key, value in options.get("sim_options", {}).items():
         vu.set_sim_option(key, value)
 
 

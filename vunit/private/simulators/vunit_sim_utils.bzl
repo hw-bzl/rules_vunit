@@ -31,11 +31,12 @@ an absolute filesystem path, optionally walking N parent directories up (e.g.
     },
 )
 
-def _vunit_sim_info_init(*, all_files, bins, compile, name, env = {}):
+def _vunit_sim_info_init(*, all_files, bins, compile, name, env = {}, coverage = None):
     return {
         "all_files": all_files,
         "bins": bins,
         "compile": compile,
+        "coverage": coverage,
         "env": env,
         "name": name,
     }
@@ -67,6 +68,26 @@ shipped `compile`.
         "all_files": "depset[File]: All transitive runfiles required by the simulator.",
         "bins": "dict[str, File]: Simulator binaries to place on PATH at test time. Keys are the expected binary names (e.g. {'ghdl': <File>} or {'vsim': <File>, 'vlog': <File>, 'vcom': <File>, 'vlib': <File>}).",
         "compile": "callable: A function with signature `compile(ctx, simulator, libraries, sim_opts) -> VUnitSimOutputInfo` that gathers and stages HDL sources for VUnit. `libraries` is a list of `(lib_name, target)` pairs.",
+        "coverage": ("struct-or-None: Per-sim bridge from raw simulator " +
+                     "coverage output to lcov for `bazel coverage`. When " +
+                     "set AND the test is launched under `bazel coverage` " +
+                     "(`ctx.configuration.coverage_enabled`), the process " +
+                     "wrapper invokes the tool after the sim returns, " +
+                     "producing lcov at `$COVERAGE_OUTPUT_FILE`. Sims " +
+                     "without coverage support leave this `None`. Fields:\n" +
+                     "  * `tool` (Target): the coverage tool target. `vunit_test` " +
+                     "reads `tool[DefaultInfo].files_to_run.executable` for the " +
+                     "executable path and `tool[DefaultInfo].default_runfiles` for " +
+                     "the tool's runfiles tree — passing the target (not just the " +
+                     "executable File) means rules_venv-based binaries get their " +
+                     "venv_config + interpreter staged into the test runfiles.\n" +
+                     "  * `args` (list[str]): args template. `{output}` is " +
+                     "substituted with `$COVERAGE_OUTPUT_FILE`; `{data_files}` " +
+                     "is expanded into one positional arg per file matched " +
+                     "by `data_glob`. Other entries pass through verbatim.\n" +
+                     "  * `data_glob` (str): shell glob relative to the " +
+                     "VUnit output dir selecting the raw coverage artifacts " +
+                     "the tool consumes (e.g. `**/*.covdb` for NVC)."),
         "env": "dict[str, str]: Environment variables this simulator needs when the vunit runner invokes it at test time (e.g. license-server pointers, install-root vars). Surfaced from the sim rule's `env` attr; defaults to `{}` when a sim integration omits it. Precedence at test time: toolchain `env` < sim `env` < rule-level `vunit_test(env = ...)`.",
         "name": "str: The VUnit simulator name this integration declares (e.g. \"ghdl\", \"nvc\", \"modelsim\"). Used to populate `VUNIT_SIMULATOR` at test time.",
     },
