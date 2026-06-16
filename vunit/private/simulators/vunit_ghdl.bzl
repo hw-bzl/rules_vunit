@@ -79,22 +79,6 @@ def ghdl_compile(ctx, simulator, libraries, sim_opts):
         if rloc:
             sim_env["GHDL_PREFIX"] = "abs:" + rloc
 
-    if ctx.attr.coverage:
-        # Emit the GHDL-side coverage flags via the generic
-        # `VUNIT_COVERAGE_SIM_OPTIONS` contract the default `run.py` reads.
-        # `--coverage` translates (at the gcc backend) into
-        # `-fprofile-arcs -ftest-coverage` on both the analyze and elab
-        # passes, instrumenting the generated objects for gcov.
-        #
-        # TODO: only the gcc backend actually emits coverage; the BCR
-        # `ghdl` module ships `mcode` and `llvm-jit` only, so this path
-        # is wired-but-untested against a stock BCR build. See the
-        # `### Coverage` section of `vunit_ghdl_sim`'s doc.
-        sim_env["VUNIT_COVERAGE_SIM_OPTIONS"] = json.encode({
-            "ghdl.a_flags": ["--coverage"],
-            "ghdl.elab_flags": ["--coverage"],
-        })
-
     return VUnitSimOutputInfo(
         runfiles = ctx.runfiles(transitive_files = depset(transitive = transitive)),
         sim_env = sim_env,
@@ -151,22 +135,14 @@ libraries from the BCR `ghdl` module — most projects want
 
 ### Coverage
 
-When `coverage = True` is set on a `vunit_test` resolving to this
-simulator, `ghdl_compile` publishes
-`{"ghdl.a_flags": ["--coverage"], "ghdl.elab_flags": ["--coverage"]}`
-via the sim-agnostic `VUNIT_COVERAGE_SIM_OPTIONS` env contract that
-the default `run.py` reads (see `_configure_coverage` in
-`//tools/run:run.py`). The default driver applies the dict verbatim
-via `vu.set_sim_option(...)`; no GHDL-specific code lives in the
-driver.
-
-TODO: GHDL only emits coverage data when built with the `gcc` backend.
-The BCR `ghdl` module ships only the `mcode` and `llvm-jit` backends —
-neither supports coverage — so the wired-up `--coverage` flags are a
-no-op (or runtime error) against a stock BCR build. A consumer who
-points `vunit_ghdl_sim(ghdl = ...)` at their own GHDL+gcc binary
-picks up real coverage out of these flags. The rules_vunit CI cannot
-exercise this path today.
+GHDL only emits coverage when built with the `gcc` backend; the BCR
+`ghdl` module ships only `mcode` and `llvm-jit`, neither of which
+support it. Wiring up coverage flags here would be a no-op (or
+runtime error) against a stock BCR build, so this rule omits the
+sim-side coverage path. The generic `VUnitSimInfo.coverage` field
+remains available for downstream toolchains that point
+`vunit_ghdl_sim(ghdl = ...)` at a GHDL+gcc binary and want to thread
+gcov output through `bazel coverage`.
 """,
     implementation = _vunit_ghdl_sim_impl,
     attrs = {

@@ -106,29 +106,67 @@ def parse_args(args: Sequence[str]) -> argparse.Namespace:
         default=[],
         action="append",
         help=(
-            "Precompiled library set as `<format>:<vendor>:<rlocationpath>`. "
-            "`format` selects the link directive family (e.g. `aldec` -> "
-            "`vmap -link`); `vendor` triggers ecosystem quirks (e.g. "
-            "`xilinx` adds `xil_defaultlib.glbl` as a sibling top). "
-            "Repeatable. Exposed to run.py via `VUNIT_PRECOMPILED_LIBS_JSON`."
+            "Precompiled library set as "
+            "`<format>:<vendor>:<flags>:<rlocationpath>`. `format` selects "
+            "the link directive family (e.g. `aldec` -> `vmap -link`). "
+            "`vendor` is advisory only — included in the run.py JSON for "
+            "logging. `flags` is a comma-separated subset of "
+            "`{links_secureip, provides_glbl}` advertising ecosystem "
+            "quirks (e.g. `provides_glbl` -> run.py adds "
+            "`xil_defaultlib.glbl` as a sibling top; `links_secureip` -> "
+            "run.py adds `-L secureip`). Empty flags allowed: "
+            "`<format>:<vendor>::<rlocationpath>`. Repeatable. Exposed to "
+            "run.py via `VUNIT_PRECOMPILED_LIBS_JSON`."
         ),
     )
     parser.add_argument(
         "--coverage",
         action="store_true",
-        help="Enable coverage instrumentation. Sets `VUNIT_COVERAGE=1` for the run.py.",
+        help=(
+            "Set when the rule sees `ctx.configuration.coverage_enabled` "
+            "(i.e. `bazel coverage`). Sets `VUNIT_COVERAGE=1` so the "
+            "run.py's `_configure_coverage` applies any sim-supplied "
+            "`VUNIT_COVERAGE_SIM_OPTIONS`. Real upstream-supported sims "
+            "(Mentor/Aldec) populate that env; open-source sims with no "
+            "VUnit coverage integration (NVC, GHDL+gcc) leave it unset."
+        ),
     )
     parser.add_argument(
-        "--coverage_output",
+        "--coverage_tool",
         type=str,
         default=None,
         help=(
-            "rlocationpath of the coverage artifact path (Aldec ACDB, "
-            "Mentor UCDB, GHDL gcov, …). Exposed to run.py via "
-            "`VUNIT_COVERAGE_OUTPUT` as an absolute path."
+            "Rlocationpath of the sim's coverage post-processor. When set "
+            "AND the test runs under `bazel coverage` (`COVERAGE_OUTPUT_FILE` "
+            "is in env), the wrapper runs `<tool> <coverage_args>` after the "
+            "sim returns to translate the sim's raw coverage output into "
+            "lcov at `$COVERAGE_OUTPUT_FILE`. Repeatable `--coverage_arg` "
+            "entries describe the invocation."
         ),
     )
-
+    parser.add_argument(
+        "--coverage_data_glob",
+        type=str,
+        default=None,
+        help=(
+            "Shell glob (relative to the VUnit output dir) selecting the "
+            "raw coverage data file(s) the `--coverage_tool` consumes."
+        ),
+    )
+    parser.add_argument(
+        "--coverage_arg",
+        dest="coverage_args",
+        type=str,
+        default=[],
+        action="append",
+        help=(
+            "Arg template fragment for invoking `--coverage_tool`. "
+            "`{output}` is substituted with `$COVERAGE_OUTPUT_FILE`; "
+            "`{data_files}` is expanded into one positional arg per file "
+            "matched by `--coverage_data_glob`. Other tokens pass through "
+            "unchanged. Repeatable."
+        ),
+    )
     return parser.parse_args(args)
 
 
@@ -255,18 +293,22 @@ def main() -> None:
     env["VUNIT_XUNIT_XML"] = str(xunit_path)
 
     # Precompiled libs: surface as a small JSON the run.py reads. Format:
-    # `[{"simulator": "...", "library_dir": "<absolute path>"}, ...]`. The
-    # absolute path is computed here (where runfiles resolution lives) so
-    # the run.py doesn't need to thread Runfiles itself.
+    # `[{"format": "...", "vendor": "...", "links_secureip": bool,
+    #   "provides_glbl": bool, "library_dir": "<absolute path>"}, ...]`.
+    # The absolute path is computed here (where runfiles resolution lives)
+    # so the run.py doesn't need to thread Runfiles itself.
     if args.precompiled_lib_dirs:
         precompiled_descriptors = []
         for entry in args.precompiled_lib_dirs:
-            fmt, vendor, rloc = entry.split(":", 2)
+            fmt, vendor, flags_csv, rloc = entry.split(":", 3)
+            flags = set(f for f in flags_csv.split(",") if f)
             lib_dir = _find_runfile(runfiles, rloc)
             precompiled_descriptors.append(
                 {
                     "format": fmt,
                     "vendor": vendor,
+                    "links_secureip": "links_secureip" in flags,
+                    "provides_glbl": "provides_glbl" in flags,
                     "library_dir": str(lib_dir.absolute()),
                 }
             )
@@ -279,17 +321,6 @@ def main() -> None:
 
     if args.coverage:
         env["VUNIT_COVERAGE"] = "1"
-        if args.coverage_output:
-            cov_runfile = runfiles.Rlocation(args.coverage_output)
-            if cov_runfile:
-                cov_path = Path(cov_runfile).absolute()
-                cov_path.parent.mkdir(parents=True, exist_ok=True)
-                env["VUNIT_COVERAGE_OUTPUT"] = str(cov_path)
-            else:
-                # The path is a declared output not yet materialised;
-                # compute the expected location relative to the workspace
-                # so run.py can write there.
-                env["VUNIT_COVERAGE_OUTPUT"] = args.coverage_output
 
     # `run_py` is a plain Python script. Run it inside the wrapper's venv
     # (which `vunit_test` populates with `toolchain.vunit` + user deps)
@@ -305,7 +336,97 @@ def main() -> None:
         check=False,
     )
 
+    # `bazel coverage` sets `COVERAGE_OUTPUT_FILE` to the per-test lcov path
+    # it expects to read. When the sim shipped a coverage_tool descriptor
+    # (commercial sims with real VUnit coverage integration — Mentor's
+    # `vcover`, Aldec's exporters — set this), invoke it now to translate
+    # raw sim coverage output into lcov. A failure here only complains to
+    # stderr — the test's pass/fail is independent of whether coverage
+    # post-processing succeeded.
+    coverage_output_file = os.environ.get("COVERAGE_OUTPUT_FILE")
+    if (
+        result.returncode == 0
+        and coverage_output_file
+        and args.coverage_tool
+        and args.coverage_data_glob
+        and args.coverage_args
+    ):
+        try:
+            _emit_coverage_lcov(
+                runfiles=runfiles,
+                tool_rloc=args.coverage_tool,
+                data_glob=args.coverage_data_glob,
+                args_template=args.coverage_args,
+                search_dirs=[out_dir],
+                output_path=Path(coverage_output_file),
+                env=env,
+            )
+        except RuntimeError as exc:
+            print(f"coverage post-process failed: {exc}", file=sys.stderr)
+
     sys.exit(result.returncode)
+
+
+# pylint: disable-next=too-many-arguments
+def _emit_coverage_lcov(
+    *,
+    runfiles: Runfiles,
+    tool_rloc: str,
+    data_glob: str,
+    args_template: Sequence[str],
+    search_dirs: Sequence[Path],
+    output_path: Path,
+    env: dict[str, str],
+) -> None:
+    """Invoke the sim's coverage tool to translate raw data → lcov.
+
+    Searches each path in `search_dirs` for files matching `data_glob`
+    (sims may scatter coverage artifacts across several subtrees of the
+    VUnit output dir). Substitutes `{output}` with `output_path` (an
+    absolute path) and `{data_files}` with absolute positional args for
+    each discovered file, then runs the tool.
+
+    `env` is the wrapper's composed env (with `PATH` extended to include
+    the symlinked sim binaries) so the coverage tool can re-invoke the
+    simulator if it needs to.
+    """
+    tool_path = _find_runfile(runfiles, tool_rloc)
+    seen: set[Path] = set()
+    for d in search_dirs:
+        seen.update(p.absolute() for p in d.glob(data_glob))
+    data_files = sorted(seen)
+    if not data_files:
+        print(
+            f"coverage post-process: no files matching {data_glob!r} under "
+            f"{', '.join(str(d) for d in search_dirs)}; skipping lcov emission",
+            file=sys.stderr,
+        )
+        return
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cli_args: list[str] = []
+    for tmpl in args_template:
+        if tmpl == "{data_files}":
+            cli_args.extend(str(f) for f in data_files)
+        else:
+            cli_args.append(tmpl.replace("{output}", str(output_path)))
+
+    print(
+        f"coverage post-process: {tool_path} {' '.join(cli_args)}",
+        file=sys.stderr,
+    )
+    cov_result = subprocess.run(
+        [str(tool_path), *cli_args],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        encoding="utf-8",
+        env=env,
+    )
+    if cov_result.stdout:
+        print(cov_result.stdout.rstrip(), file=sys.stderr)
+    if cov_result.returncode != 0:
+        raise RuntimeError(f"coverage tool exited {cov_result.returncode}")
 
 
 if __name__ == "__main__":

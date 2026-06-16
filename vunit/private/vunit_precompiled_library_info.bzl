@@ -40,14 +40,30 @@ VUnitPrecompiledLibraryInfo = provider(
                         "synopsys: ./synopsys_sim.setup; " +
                         "cadence: ./cds.lib) plus the per-library compiled " +
                         "artifacts the link-config references."),
-        "vendor": ("str: optional ecosystem identifier for vendor-specific " +
-                   "quirks. Known values: " +
-                   "`xilinx` (Vivado export — adds `xil_defaultlib.glbl` as " +
-                   "a sibling top to elaborate GSR/GTS/PRLD pseudo-resets, " +
-                   "and bumps simulation precision to `fs` so MMCM/PLL " +
-                   "half-period math survives rounding). Empty string for " +
-                   "bundles that don't need ecosystem fixups. The wrapper " +
-                   "applies vendor quirks additively on top of the format's " +
-                   "runner patch."),
+        "links_secureip": ("bool: True when this bundle ships a `secureip` " +
+                           "library that encrypted vendor primitives " +
+                           "reference at elaboration. When set, the " +
+                           "wrapper instructs the toolchain `run.py` to " +
+                           "add `-L secureip` (Aldec) / equivalent to the " +
+                           "vsim link flags so the encrypted modules " +
+                           "resolve. Replaces the legacy `vendor='xilinx'` " +
+                           "string check in downstream `run.py`s."),
+        "provides_glbl": ("bool: True when this bundle ships the Xilinx " +
+                          "`glbl` module needed to drive global pseudo-" +
+                          "resets (GSR/GTS/PRLD) for Vivado-exported IP. " +
+                          "When set, the wrapper instructs the toolchain " +
+                          "`run.py` to add `xil_defaultlib.glbl` as a " +
+                          "sibling simulation top. Replaces the legacy " +
+                          "`vendor='xilinx'` string check; bundles that " +
+                          "provide glbl elsewhere (or don't need it) can " +
+                          "leave this False even with `vendor='xilinx'`."),
+        "vendor": ("str: free-form ecosystem identifier, included in the " +
+                   "wrapper's runtime descriptor as advisory metadata for " +
+                   "the toolchain `run.py` (e.g. logging which vendor's " +
+                   "libs were linked). NOT used by the wrapper for any " +
+                   "behavioral decision — see `links_secureip` / " +
+                   "`provides_glbl` for typed quirks. Conventional values: " +
+                   "`xilinx`, `intel`, `microchip`, or empty for " +
+                   "non-vendor bundles."),
     },
 )
