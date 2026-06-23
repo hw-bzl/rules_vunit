@@ -193,7 +193,7 @@ vunit_toolchain(
     vunit = "//path/to:vunit_py_library",
     default_sim = "ghdl",
     simulators = {":vunit_ghdl": "ghdl"},
-    # run_py defaults to //vunit/private:run.py.
+    # run_py defaults to //tools/rules_vunit_run:rules_vunit_run.py.
 )
 
 toolchain(
@@ -208,8 +208,9 @@ chooses which simulator runs when a <code>vunit_test</code> omits its own <code>
 attribute; it's optional, but if set must name one of the keys in
 <code>simulators</code>.</p>
 <h3 id="customising-runpy"><a class="header" href="#customising-runpy">Customising <code>run.py</code></a></h3>
-<p>The default <code>run.py</code> (shipped at <code>//tools/run:run.py</code>) reads a JSON
-descriptor from <code>VUNIT_LIBRARIES_JSON</code>, declares each library with
+<p>The default <code>run.py</code> (shipped at
+<code>//tools/rules_vunit_run:rules_vunit_run.py</code>) reads a JSON descriptor
+from <code>VUNIT_LIBRARIES_JSON</code>, declares each library with
 <code>vu.add_library(...)</code> / <code>lib.add_source_file(...)</code>, and calls
 <code>vu.main()</code>. Override it via the <code>run_py</code> attribute when you need extra
 configuration — custom test attributes, <code>set_sim_option(...)</code> calls,
@@ -222,6 +223,12 @@ configuration — custom test attributes, <code>set_sim_option(...)</code> calls
 <p>The script runs inside the venv composed by the <code>vunit_test</code> rule:
 <code>toolchain.vunit</code> is on <code>sys.path</code>, plus anything the test pulls in via
 its own <code>deps</code> attribute. So a custom <code>run.py</code> just needs to <code>import vunit</code> and any helper packages declared on the test target.</p>
+<p>The default driver's plumbing is also exposed as a Python library —
+<code>from rules_vunit_run import load_manifest, ensure_vunit_verilog_path_is_plus_free, vunit_builtin_verilog_include_dir, configure_coverage</code> — so a custom <code>run.py</code> can reuse the manifest
+loader, the bzlmod <code>+</code>-in-path workaround for Aldec, and the coverage
+hook instead of vendoring them. Add
+<code>@rules_vunit//tools/rules_vunit_run</code> to the test target's <code>deps</code> to
+make the import resolve.</p>
 <p>Per-simulator API and wiring details live in the
 <a href="./simulators.html">Simulators</a> section.</p>
 <p><strong>ATTRIBUTES</strong></p>
@@ -229,7 +236,7 @@ its own <code>deps</code> attribute. So a custom <code>run.py</code> just needs 
 <tr><td style="text-align: left"><a id="vunit_toolchain-name"></a>name</td><td style="text-align: left">A unique name for this target.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels#target-names">Name</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>
 <tr><td style="text-align: left"><a id="vunit_toolchain-default_sim"></a>default_sim</td><td style="text-align: left">An optional default simulator to use.</td><td style="text-align: left">String</td><td style="text-align: left">optional</td><td style="text-align: left"><code>""</code></td></tr>
 <tr><td style="text-align: left"><a id="vunit_toolchain-env"></a>env</td><td style="text-align: left">Environment variables to set whenever the toolchain invokes a simulator. Applied to every sim registered in <code>simulators</code>; for sim-specific vars (license server, install root, etc.) prefer the per-<code>vunit_*_sim</code> <code>env</code> attr instead. Precedence at test time: toolchain <code>env</code> &lt; sim <code>env</code> &lt; rule-level <code>vunit_test(env = ...)</code>.</td><td style="text-align: left"><a href="https://bazel.build/rules/lib/dict">Dictionary: String -&gt; String</a></td><td style="text-align: left">optional</td><td style="text-align: left"><code>{}</code></td></tr>
-<tr><td style="text-align: left"><a id="vunit_toolchain-run_py"></a>run_py</td><td style="text-align: left">The Python orchestration script the <code>vunit_test</code> rule invokes. Defaults to a shipped driver that wires VUnit up from a JSON library descriptor; override with your own <code>.py</code> when you need custom orchestration (hooks, per-test attributes, etc.). Python deps for the script come from the toolchain's <code>vunit</code> py_library plus the test's <code>deps</code> — both are stitched into the venv that runs the script.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">Label</a></td><td style="text-align: left">optional</td><td style="text-align: left"><code>"@rules_vunit//tools/run:run.py"</code></td></tr>
+<tr><td style="text-align: left"><a id="vunit_toolchain-run_py"></a>run_py</td><td style="text-align: left">The Python orchestration script the <code>vunit_test</code> rule invokes. Defaults to a shipped driver that wires VUnit up from a JSON library descriptor; override with your own <code>.py</code> when you need custom orchestration (hooks, per-test attributes, etc.). Python deps for the script come from the toolchain's <code>vunit</code> py_library plus the test's <code>deps</code> — both are stitched into the venv that runs the script.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">Label</a></td><td style="text-align: left">optional</td><td style="text-align: left"><code>"@rules_vunit//tools/rules_vunit_run:rules_vunit_run.py"</code></td></tr>
 <tr><td style="text-align: left"><a id="vunit_toolchain-simulators"></a>simulators</td><td style="text-align: left">A mapping of <code>vunit_*_sim</code> targets to their matching simulator names. Every target must provide <code>VUnitSimInfo</code>.</td><td style="text-align: left"><a href="https://bazel.build/rules/lib/dict">Dictionary: Label -&gt; String</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>
 <tr><td style="text-align: left"><a id="vunit_toolchain-vunit"></a>vunit</td><td style="text-align: left">The <code>vunit</code> python library.</td><td style="text-align: left"><a href="https://bazel.build/concepts/labels">Label</a></td><td style="text-align: left">required</td><td style="text-align: left"></td></tr>
 </tbody></table>
