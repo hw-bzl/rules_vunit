@@ -31,11 +31,16 @@ def _build_libraries_from_module(module):
     """Walk a module's transitive HDL DAG and group sources by VUnit library.
 
     Returns `(grouped, source_depset)`. `grouped` maps
-    `lib_name -> {"vhdl_sources": [File], "verilog_sources": [File]}`;
+    `lib_name -> {"vhdl_sources": [File], "verilog_sources": [File],
+                  "verilog_include_dirs": [str]}`;
     rlocationpath conversion is deferred to `_libraries_json_map_fn` so
     File-to-path conversion happens at action time and any active path
     mapping is honored. `source_depset` is the union of all HDL files
-    referenced (used to extend runfiles).
+    referenced (used to extend runfiles); it includes any
+    `VerilogInfo.hdrs` reached via the dep walk so user-supplied
+    SV headers (the targets of SV `include` directives like
+    `my_helpers.svh`) are staged into the test action's runfiles
+    alongside the corresponding source.
 
     Each reachable `VhdlInfo` contributes its sources under its own
     `library` field (falling back to `"work"` — the VHDL default — when
@@ -43,6 +48,12 @@ def _build_libraries_from_module(module):
     `VerilogInfo` sources land in the module's own VHDL `library` when
     `module` is a `vhdl_library` (so a mixed-language testbench compiles
     everything into one library by default), otherwise `"work"`.
+    `VerilogInfo.includes` (the include search paths populated by
+    `verilog_library` from its `hdrs`' parent directories and explicit
+    `includes`) flow through to the per-library `verilog_include_dirs`
+    so the driver can pass them to `add_source_file(include_dirs=...)`
+    at compile time — without this, an SV `include` directive
+    targeting a transitive header library silently fails to resolve.
 
     `VhdlInfo.deps` and `VerilogInfo.deps` are already transitive
     depsets of their respective providers — no aspect needed; the
@@ -62,7 +73,11 @@ def _build_libraries_from_module(module):
         # picks up its direct sources too.
         for v in info.deps.to_list() + [info]:
             lib_name = v.library or "work"
-            entry = grouped.setdefault(lib_name, {"verilog_sources": [], "vhdl_sources": []})
+            entry = grouped.setdefault(lib_name, {
+                "verilog_include_dirs": [],
+                "verilog_sources": [],
+                "vhdl_sources": [],
+            })
             source_depsets.append(v.srcs)
             source_depsets.append(v.data)
             for f in v.srcs.to_list():
@@ -70,12 +85,33 @@ def _build_libraries_from_module(module):
 
     if VerilogInfo in module:
         info = module[VerilogInfo]
-        entry = grouped.setdefault(verilog_lib_name, {"verilog_sources": [], "vhdl_sources": []})
-        for v in info.deps.to_list() + [info]:
+        entry = grouped.setdefault(verilog_lib_name, {
+            "verilog_include_dirs": [],
+            "verilog_sources": [],
+            "vhdl_sources": [],
+        })
+
+        # Order-preserving dedup of include dirs: SV `+incdir+` is
+        # first-match-wins, and the walk visits `info` FIRST so the
+        # module's own dirs win over a same-named header reached
+        # transitively. Starlark has no `set`; a dict keyed by the
+        # value is the conventional shape.
+        seen = {d: None for d in entry["verilog_include_dirs"]}
+        for v in [info] + info.deps.to_list():
             source_depsets.append(v.srcs)
             source_depsets.append(v.data)
+
+            # Verilog `hdrs` (`.vh`/`.svh`) are textually included by
+            # SV preprocessor at compile time, not separately compiled.
+            # They must be in the action's runfiles AND on the include
+            # search path (see `verilog_include_dirs` below).
+            source_depsets.append(v.hdrs)
             for f in v.srcs.to_list():
                 entry["verilog_sources"].append(f)
+            for d in v.includes.to_list():
+                if d not in seen:
+                    seen[d] = None
+                    entry["verilog_include_dirs"].append(d)
 
     return grouped, depset(transitive = source_depsets)
 
@@ -93,6 +129,18 @@ def _libraries_json_map_fn(value):
     for lib_name in sorted(grouped.keys()):
         entry = grouped[lib_name]
         descriptor[lib_name] = {
+            # Order preserved (no sort): SV `+incdir+` is first-match-
+            # wins, and the dep walk puts the module's own dirs first
+            # then transitive — re-sorting would silently change which
+            # header wins for clashing filenames. Each string is an
+            # exec-root-relative path from `VerilogInfo.includes`;
+            # strip the `external/` prefix for cross-repo entries (or
+            # prefix the workspace name for main-repo entries) so the
+            # wrapper can resolve them via `Runfiles.Rlocation`.
+            "verilog_include_dirs": [
+                d[len("external/"):] if d.startswith("external/") else "{}/{}".format(workspace_name, d)
+                for d in entry["verilog_include_dirs"]
+            ],
             "verilog_sources": sorted([
                 _rlocationpath(f, workspace_name)
                 for f in entry["verilog_sources"]

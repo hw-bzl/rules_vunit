@@ -125,7 +125,7 @@ def parse_args(args: Sequence[str]) -> argparse.Namespace:
         help=(
             "Set when the rule sees `ctx.configuration.coverage_enabled` "
             "(i.e. `bazel coverage`). Sets `VUNIT_COVERAGE=1` so the "
-            "run.py's `_configure_coverage` applies any sim-supplied "
+            "run.py's `configure_coverage` applies any sim-supplied "
             "`VUNIT_COVERAGE_SIM_OPTIONS`. Real upstream-supported sims "
             "(Mentor/Aldec) populate that env; open-source sims with no "
             "VUnit coverage integration (NVC, GHDL+gcc) leave it unset."
@@ -217,6 +217,15 @@ def _resolve_libraries_json(runfiles: Runfiles, src_rloc: str, dst_path: Path) -
             ],
             "verilog_sources": [
                 str(_find_runfile(runfiles, p).absolute()) for p in entry.get("verilog_sources", [])
+            ],
+            # Include-dir strings carry exec-root-relative paths
+            # rewritten to rlocationpath form by the rule (see
+            # `_include_dir_rlocationpath` in vunit_test.bzl).
+            # Resolve them the same way as sources so the driver
+            # passes absolute paths to `add_source_file(include_dirs=)`.
+            "verilog_include_dirs": [
+                str(_find_runfile(runfiles, p).absolute())
+                for p in entry.get("verilog_include_dirs", [])
             ],
         }
         for lib, entry in raw.items()

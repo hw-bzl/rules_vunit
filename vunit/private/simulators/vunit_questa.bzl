@@ -1,8 +1,6 @@
 """VUnit Questa simulator integration"""
 
-load("@rules_verilog//verilog:defs.bzl", "VerilogInfo")
-load("@rules_vhdl//vhdl:defs.bzl", "VhdlInfo")
-load(":vunit_sim_utils.bzl", "SIM_ENV_ATTR", "VUnitSimInfo", "VUnitSimOutputInfo")
+load(":vunit_sim_utils.bzl", "SIM_ENV_ATTR", "VUnitSimInfo", "VUnitSimOutputInfo", "gather_library_sources")
 
 VUnitSimQuestaInfo = provider(
     doc = "Questa-specific extension of `VUnitSimInfo`.",
@@ -14,21 +12,6 @@ VUnitSimQuestaInfo = provider(
         "vsim": "File: The `vsim` simulator executable.",
     },
 )
-
-def _gather_library_sources(libraries):
-    transitive = []
-    for _, lib_target in libraries:
-        if VhdlInfo in lib_target:
-            transitive.append(lib_target[VhdlInfo].srcs)
-            transitive.append(lib_target[VhdlInfo].data)
-        elif VerilogInfo in lib_target:
-            transitive.append(lib_target[VerilogInfo].srcs)
-            transitive.append(lib_target[VerilogInfo].data)
-        else:
-            fail("Library target `{}` provides neither VhdlInfo nor VerilogInfo.".format(
-                lib_target.label,
-            ))
-    return depset(transitive = transitive)
 
 def questa_compile(ctx, simulator, libraries, sim_opts):
     """Stage HDL sources for a Questa simulation under VUnit.
@@ -48,7 +31,7 @@ def questa_compile(ctx, simulator, libraries, sim_opts):
 
     # VUnit shares the `modelsim` backend for both ModelSim and Questa.
     return VUnitSimOutputInfo(
-        runfiles = ctx.runfiles(transitive_files = _gather_library_sources(libraries)),
+        runfiles = ctx.runfiles(transitive_files = gather_library_sources(libraries)),
         sim_env = {"VUNIT_SIMULATOR": "modelsim"},
         test_args = list(sim_opts),
         build_args = [],

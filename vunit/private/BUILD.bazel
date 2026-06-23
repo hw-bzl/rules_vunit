@@ -4,6 +4,7 @@ load(":vunit_toolchain.bzl", "current_vunit_toolchain_lib")
 exports_files([
     "BUILD.vunit_hdl.bazel",
     "vunit_hdl_llvm_jit_backend.patch",
+    "vunit_hdl_verilog_path.patch",
 ])
 
 current_vunit_toolchain_lib(

@@ -1,5 +1,41 @@
 """Common utilities for vunit simulator actions"""
 
+load("@rules_verilog//verilog:defs.bzl", "VerilogInfo")
+load("@rules_vhdl//vhdl:defs.bzl", "VhdlInfo")
+
+def gather_library_sources(libraries):
+    """Collect transitive HDL source / data / hdr files from library targets.
+
+    Mixed-language commercial sims (Aldec Active-HDL, ModelSim,
+    Questa, Riviera) all need the same shape: VHDL srcs+data, or
+    Verilog srcs+data+hdrs (hdrs are textually included by the SV
+    preprocessor — they don't compile separately, but must be staged
+    so `\\`include "foo.svh"` resolves against the include search
+    path threaded through the manifest by `_build_libraries_from_module`).
+
+    Args:
+      libraries: list of `(lib_name, target)` pairs; each target must
+        provide either `VhdlInfo` or `VerilogInfo`.
+
+    Returns:
+      A `depset[File]` of all transitive sources, data files, and SV
+      headers reached through the libraries.
+    """
+    transitive = []
+    for _, lib_target in libraries:
+        if VhdlInfo in lib_target:
+            transitive.append(lib_target[VhdlInfo].srcs)
+            transitive.append(lib_target[VhdlInfo].data)
+        elif VerilogInfo in lib_target:
+            transitive.append(lib_target[VerilogInfo].srcs)
+            transitive.append(lib_target[VerilogInfo].data)
+            transitive.append(lib_target[VerilogInfo].hdrs)
+        else:
+            fail("Library target `{}` provides neither VhdlInfo nor VerilogInfo.".format(
+                lib_target.label,
+            ))
+    return depset(transitive = transitive)
+
 # Shared `env` attribute used by every `vunit_*_sim` rule. Surfaced on
 # the rule's `VUnitSimInfo.env` field; consumed by `vunit_test` when it
 # builds the `--sim_env` list passed to the process wrapper. The doc

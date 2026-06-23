@@ -40,14 +40,26 @@ http_archive(
     name = "vunit_hdl",
     build_file = "//vunit/private:BUILD.vunit_hdl.bazel",
     dev_dependency = True,
-    # Teach VUnit's GHDL backend detector about the `llvm-jit` backend.
-    # The BCR `ghdl@6.0.0.bcr.1` module's non-x86_64 build uses
-    # `llvm-jit` (mcode is x86-only) and emits a `--version` line VUnit
-    # 4.7.1's regex set doesn't recognize. See the patch header for
-    # details. Drop the patch when bumping to a VUnit release that
-    # recognises `llvm-jit` upstream.
+    # Two carry patches against VUnit 4.7.1; both have a per-file
+    # header documenting the failure mode they close and a
+    # "drop this patch when upstream takes a fix" note.
+    #   * `llvm_jit_backend` — teach VUnit's GHDL backend detector
+    #     about the `llvm-jit` backend (BCR `ghdl@6.0.0.bcr.1`'s
+    #     non-x86_64 build emits a `--version` line VUnit's
+    #     `determine_backend` regex set doesn't recognize).
+    #   * `verilog_path` — drop `.resolve()` from `VERILOG_PATH` so
+    #     VUnit stays inside the action's runfiles sandbox; mirror
+    #     `vunit/verilog/` to a `+`-free tmp dir when the path
+    #     contains `+` (Bazel's bzlmod external-repo layout is
+    #     `+http_archive+vunit_hdl/...`; Aldec vlog treats `+` in
+    #     `+incdir+` as a list separator and reports
+    #     `VCP1000 Cannot open file vunit_defines.svh` without the
+    #     staging).
     patch_args = ["-p1"],
-    patches = ["//vunit/private:vunit_hdl_llvm_jit_backend.patch"],
+    patches = [
+        "//vunit/private:vunit_hdl_llvm_jit_backend.patch",
+        "//vunit/private:vunit_hdl_verilog_path.patch",
+    ],
     sha256 = "3a6f0e19eaa1e79899676aa4cdce95ec8f649002362c4458c3e0412d0f7d0912",
     strip_prefix = "vunit_hdl-4.7.1",
     urls = ["https://files.pythonhosted.org/packages/18/a4/b8a53f6ba286cc5b37199859a65583b4a574be68700fd35f7debe99231c0/vunit_hdl-4.7.1.tar.gz"],

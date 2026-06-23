@@ -14,5 +14,13 @@ py_library(
         # `import vunit`. The active toolchain's `vunit` library reaches
         # the test via `toolchain.run_py` (a `py_binary`) instead.
         "@rules_venv//python/runfiles",
+        # `rules_vunit_run` ships the default driver's reusable helpers
+        # (manifest loader, Aldec `+`-in-path workaround, coverage hook).
+        # Threading the dep through the wrapper guarantees every
+        # `run_py` script — default OR a consumer override — can
+        # `from rules_vunit_run import …` without each consumer's
+        # toolchain needing to add the dep manually (which would cycle
+        # back through `current_vunit_toolchain_lib`).
+        "//tools/rules_vunit_run",
     ],
 )
