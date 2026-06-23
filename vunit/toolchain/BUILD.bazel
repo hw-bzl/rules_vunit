@@ -43,8 +43,9 @@ vunit_toolchain(
     },
     target_compatible_with = GHDL_COMPATIBLE_WITH,
     vunit = ":vunit",
-    # run_py defaults to //vunit/private:run.py — override per-toolchain when
-    # custom orchestration (test attributes, hooks, post_run callbacks) is needed.
+    # run_py defaults to //tools/rules_vunit_run:rules_vunit_run.py — override
+    # per-toolchain when custom orchestration (test attributes, hooks,
+    # post_run callbacks) is needed.
 )
 
 toolchain(

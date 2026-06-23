@@ -1,0 +1,61 @@
+load("@rules_venv//python:py_library.bzl", "py_library")
+load("@rules_venv//python:py_test.bzl", "py_test")
+
+# Why `//tools/rules_vunit_run/` and not `//vunit/...`: a py_binary's
+# runfiles tree mirrors the Bazel package path, so a target under
+# `//vunit/...` would put a `vunit/` directory at the runfiles root —
+# colliding with the `vunit/` Python package from `@vunit_hdl` and
+# breaking `import vunit` at script time.
+#
+# `imports = ["."]` exposes the module as `rules_vunit_run` rather
+# than `tools.rules_vunit_run.rules_vunit_run` so the import shape
+# stays stable regardless of repo layout.
+#
+# Platform constraint comes transitively from
+# `:current_vunit_toolchain_lib`, which requires a registered
+# `//vunit:toolchain_type` (the in-tree toolchain is linux-only).
+# Wrappers / consumers that depend on this target therefore inherit
+# the linux constraint — that's intentional given the current
+# toolchain registration.
+#
+# Consumers do NOT depend on this target directly — the
+# `vunit_process_wrapper` py_library (which `vunit_test` always wires
+# into the venv) carries it, so `from rules_vunit_run import …` is
+# available in every `run_py` script automatically. Depending on it
+# explicitly from a downstream toolchain's `vunit` py_library would
+# form a cycle: `their_vunit → :rules_vunit_run →
+# :current_vunit_toolchain_lib → their_vunit`.
+py_library(
+    name = "rules_vunit_run",
+    srcs = ["rules_vunit_run.py"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = ["//vunit/private:current_vunit_toolchain_lib"],
+)
+
+# `rules_vunit_run.py` is what the toolchain `run_py` attr Label
+# points at. The wrapper passes it to
+# `subprocess.run([sys.executable, str(run_py), ...])` — the file
+# itself is what's needed, not a binary target. Export it so the
+# default Label `//tools/rules_vunit_run:rules_vunit_run.py`
+# resolves.
+exports_files(
+    ["rules_vunit_run.py"],
+    visibility = ["//visibility:public"],
+)
+
+# Unit tests for the default driver's manifest plumbing and
+# `vunit_defines.svh` include-dir resolution. CI doesn't ship a
+# SV-capable simulator so we can't end-to-end-run a user SV
+# testbench inside this repo — these tests cover the layers that
+# would otherwise regress silently: the manifest schema (loader
+# survives older manifests; new field round-trips correctly per
+# library) and the builtin-include-dir discovery
+# (`vunit_builtin_verilog_include_dir` actually points at a file
+# named `vunit_defines.svh`, not some adjacent path).
+py_test(
+    name = "rules_vunit_run_test",
+    srcs = ["rules_vunit_run_test.py"],
+    main = "rules_vunit_run_test.py",
+    deps = [":rules_vunit_run"],
+)

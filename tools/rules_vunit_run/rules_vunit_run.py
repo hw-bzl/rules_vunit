@@ -3,6 +3,11 @@
 The `vunit_test` rule invokes this script via the process wrapper. Override
 the toolchain's `run_py` attribute when you need custom orchestration
 (per-test attributes, `set_sim_option(...)` calls, `post_run` hooks, ...).
+Custom drivers can `from rules_vunit_run import load_manifest,
+ensure_vunit_verilog_path_is_plus_free, vunit_builtin_verilog_include_dir,
+configure_coverage` to reuse the default driver's plumbing instead of
+vendoring it — add `@rules_vunit//tools/rules_vunit_run` to the
+`vunit_test` deps.
 
 Wrapper-supplied environment:
     VUNIT_LIBRARIES_JSON:        path to a `LibraryManifest` (see below) as JSON.
@@ -38,17 +43,29 @@ Wrapper-supplied environment:
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
-from typing import Mapping, NamedTuple, Sequence
+from typing import List, Mapping, NamedTuple, Sequence
 
-from vunit import VUnit  # type: ignore[import-untyped]
+import vunit.builtins as vunit_builtins  # type: ignore[import-untyped]
+from vunit import VUnit
 
 
 class LibraryEntry(NamedTuple):
-    """Sources declared for a single VUnit library."""
+    """Sources declared for a single VUnit library.
+
+    `verilog_include_dirs` carries the SV `\\`include` search path
+    sourced from `VerilogInfo.includes` (`verilog_library` populates
+    it from `hdrs`' parent dirs plus the explicit `includes` attr).
+    `add_verilog_builtins()` registers the builtin headers as source
+    files but does not propagate their dir to user sources, so user
+    SV that does `\\`include "vunit_defines.svh"` only resolves when
+    we pass include_dirs explicitly to `add_source_file`.
+    """
 
     vhdl_sources: Sequence[Path]
     verilog_sources: Sequence[Path]
+    verilog_include_dirs: Sequence[str]
 
 
 # The deserialised shape of `VUNIT_LIBRARIES_JSON`. Keep in sync with
@@ -57,19 +74,69 @@ class LibraryEntry(NamedTuple):
 LibraryManifest = Mapping[str, LibraryEntry]
 
 
-def _load_manifest(path: Path) -> LibraryManifest:
+def load_manifest(path: Path) -> LibraryManifest:
     """Deserialise the libraries descriptor written by the `vunit_test` rule."""
     raw = json.loads(path.read_text(encoding="utf-8"))
     return {
         lib_name: LibraryEntry(
-            vhdl_sources=[Path(p) for p in entry.get("vhdl_sources", [])],
-            verilog_sources=[Path(p) for p in entry.get("verilog_sources", [])],
+            vhdl_sources=[Path(p) for p in entry["vhdl_sources"]],
+            verilog_sources=[Path(p) for p in entry["verilog_sources"]],
+            verilog_include_dirs=list(entry["verilog_include_dirs"]),
         )
         for lib_name, entry in raw.items()
     }
 
 
-def _configure_coverage(vu: VUnit) -> None:
+def ensure_vunit_verilog_path_is_plus_free() -> None:
+    """Rebind `vunit.builtins.VERILOG_PATH` to a `+`-free location.
+
+    Aldec vlog treats `+` in `+incdir+...` as a list separator. Under
+    bzlmod, VUnit's builtin include dir lives at
+    `<runfiles>/+http_archive+vunit_hdl/vunit/verilog`, which vlog
+    mis-parses and reports `VCP1000 Cannot open file vunit_defines.svh`.
+
+    Stage a `+`-free symlink under `$TEST_TMPDIR` (or system tempdir)
+    pointing at the original dir, then rebind the module constant to
+    the symlink's `.absolute()` path — NOT `.resolve()`, which would
+    follow back to the `+`-containing target. Idempotent: the second
+    call sees no `+` and returns. Must run BEFORE
+    `vu.add_verilog_builtins()`.
+    """
+    original = vunit_builtins.VERILOG_PATH
+    if "+" not in str(original):
+        return
+
+    tmp_root = Path(os.environ.get("TEST_TMPDIR") or tempfile.gettempdir())
+    sandbox = tmp_root / "vunit_clean_path"
+    if "+" in str(sandbox):
+        raise RuntimeError(
+            f"Refusing to stage vunit builtins under a `+`-containing path: "
+            f"{sandbox!s}. Set TEST_TMPDIR to a `+`-free directory."
+        )
+    sandbox.mkdir(parents=True, exist_ok=True)
+    link = sandbox / "verilog"
+    # Skip recreation when the symlink already points at `original`.
+    # Otherwise unlink-then-recreate handles both the missing case and
+    # the stale case (target moved across cache evictions or between
+    # tests) — `Path.exists()` follows symlinks and can't distinguish
+    # those, so a naive "skip if exists" would dangle.
+    if not (link.is_symlink() and os.readlink(link) == str(original)):
+        link.unlink(missing_ok=True)
+        link.symlink_to(original)
+    vunit_builtins.VERILOG_PATH = link.absolute()
+
+
+def vunit_builtin_verilog_include_dir() -> Path:
+    """Path containing VUnit's `vunit_defines.svh` macros.
+
+    Reads the (possibly-staged) `vunit.builtins.VERILOG_PATH`. Call
+    `ensure_vunit_verilog_path_is_plus_free` first so the path is
+    guaranteed sandbox-safe AND `+`-free.
+    """
+    return Path(vunit_builtins.VERILOG_PATH) / "include"
+
+
+def configure_coverage(vu: VUnit) -> None:
     """Apply simulator-supplied coverage options when ``VUNIT_COVERAGE=1``.
 
     Knowledge of how to enable coverage for a given simulator lives in
@@ -111,7 +178,7 @@ def _configure_coverage(vu: VUnit) -> None:
 
 def main() -> None:
     """Drive VUnit from the wrapper-supplied environment contract."""
-    manifest = _load_manifest(Path(os.environ["VUNIT_LIBRARIES_JSON"]))
+    manifest = load_manifest(Path(os.environ["VUNIT_LIBRARIES_JSON"]))
 
     # `VUnit.from_argv(argv=...)` passes argv straight to argparse — no
     # implicit `argv[1:]` strip — so we must NOT include `sys.argv[0]`
@@ -127,17 +194,39 @@ def main() -> None:
     ] + sys.argv[1:]
     vu = VUnit.from_argv(argv=argv)
 
-    if any(entry.vhdl_sources for entry in manifest.values()):
+    has_vhdl = False
+    has_verilog = False
+    for entry in manifest.values():
+        has_vhdl = has_vhdl or bool(entry.vhdl_sources)
+        has_verilog = has_verilog or bool(entry.verilog_sources)
+        if has_vhdl and has_verilog:
+            break
+
+    if has_vhdl:
         vu.add_vhdl_builtins()
-    if any(entry.verilog_sources for entry in manifest.values()):
+    builtin_verilog_include_dirs: List[str] = []
+    if has_verilog:
+        # Repoint `vunit.builtins.VERILOG_PATH` at a `+`-free staged
+        # copy when needed BEFORE `add_verilog_builtins` reads it.
+        # See the helper's docstring for the full story.
+        ensure_vunit_verilog_path_is_plus_free()
         vu.add_verilog_builtins()
+        builtin_verilog_include_dirs = [str(vunit_builtin_verilog_include_dir())]
 
     for lib_name, entry in manifest.items():
         lib = vu.add_library(lib_name)
-        for src in list(entry.vhdl_sources) + list(entry.verilog_sources):
+        for src in entry.vhdl_sources:
             lib.add_source_file(src)
+        # Per-library include dirs come from `VerilogInfo.includes`
+        # (verilog_library populates from `hdrs`' parent dirs and the
+        # `includes` attr) plus VUnit's own builtin SV header dir.
+        # VHDL `add_source_file()` doesn't accept include_dirs, so we
+        # keep the per-language loops split.
+        verilog_include_dirs = list(entry.verilog_include_dirs) + builtin_verilog_include_dirs
+        for src in entry.verilog_sources:
+            lib.add_source_file(src, include_dirs=verilog_include_dirs)
 
-    _configure_coverage(vu)
+    configure_coverage(vu)
 
     vu.main()
 

@@ -54,7 +54,7 @@ vunit_toolchain(
     vunit = "//path/to:vunit_py_library",
     default_sim = "ghdl",
     simulators = {":vunit_ghdl": "ghdl"},
-    # run_py defaults to //vunit/private:run.py.
+    # run_py defaults to //tools/rules_vunit_run:rules_vunit_run.py.
 )
 
 toolchain(
@@ -72,8 +72,9 @@ attribute; it's optional, but if set must name one of the keys in
 
 ### Customising `run.py`
 
-The default `run.py` (shipped at `//tools/run:run.py`) reads a JSON
-descriptor from `VUNIT_LIBRARIES_JSON`, declares each library with
+The default `run.py` (shipped at
+`//tools/rules_vunit_run:rules_vunit_run.py`) reads a JSON descriptor
+from `VUNIT_LIBRARIES_JSON`, declares each library with
 `vu.add_library(...)` / `lib.add_source_file(...)`, and calls
 `vu.main()`. Override it via the `run_py` attribute when you need extra
 configuration — custom test attributes, `set_sim_option(...)` calls,
@@ -87,6 +88,15 @@ The script runs inside the venv composed by the `vunit_test` rule:
 `toolchain.vunit` is on `sys.path`, plus anything the test pulls in via
 its own `deps` attribute. So a custom `run.py` just needs to `import
 vunit` and any helper packages declared on the test target.
+
+The default driver's plumbing is also exposed as a Python library —
+`from rules_vunit_run import load_manifest,
+ensure_vunit_verilog_path_is_plus_free, vunit_builtin_verilog_include_dir,
+configure_coverage` — so a custom `run.py` can reuse the manifest
+loader, the bzlmod `+`-in-path workaround for Aldec, and the coverage
+hook instead of vendoring them. Add
+`@rules_vunit//tools/rules_vunit_run` to the test target's `deps` to
+make the import resolve.
 
 Per-simulator API and wiring details live in the
 [Simulators](./simulators.md) section.
@@ -110,7 +120,7 @@ Per-simulator API and wiring details live in the
         "run_py": attr.label(
             doc = "The Python orchestration script the `vunit_test` rule invokes. Defaults to a shipped driver that wires VUnit up from a JSON library descriptor; override with your own `.py` when you need custom orchestration (hooks, per-test attributes, etc.). Python deps for the script come from the toolchain's `vunit` py_library plus the test's `deps` — both are stitched into the venv that runs the script.",
             allow_single_file = [".py"],
-            default = Label("//tools/run:run.py"),
+            default = Label("//tools/rules_vunit_run:rules_vunit_run.py"),
         ),
         "simulators": attr.label_keyed_string_dict(
             doc = "A mapping of `vunit_*_sim` targets to their matching simulator names. Every target must provide `VUnitSimInfo`.",

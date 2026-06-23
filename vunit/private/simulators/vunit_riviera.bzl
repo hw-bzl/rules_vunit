@@ -1,8 +1,6 @@
 """VUnit Riviera-PRO simulator integration"""
 
-load("@rules_verilog//verilog:defs.bzl", "VerilogInfo")
-load("@rules_vhdl//vhdl:defs.bzl", "VhdlInfo")
-load(":vunit_sim_utils.bzl", "SIM_ENV_ATTR", "VUnitSimInfo", "VUnitSimOutputInfo")
+load(":vunit_sim_utils.bzl", "SIM_ENV_ATTR", "VUnitSimInfo", "VUnitSimOutputInfo", "gather_library_sources")
 
 VUnitSimRivieraInfo = provider(
     doc = "Riviera-PRO-specific extension of `VUnitSimInfo`.",
@@ -17,21 +15,6 @@ VUnitSimRivieraInfo = provider(
         "vsimsa": "File: The `vsimsa` batch-shell executable (required at PATH alongside `vsim` for VUnit's RivieraProInterface to detect this toolchain).",
     },
 )
-
-def _gather_library_sources(libraries):
-    transitive = []
-    for _, lib_target in libraries:
-        if VhdlInfo in lib_target:
-            transitive.append(lib_target[VhdlInfo].srcs)
-            transitive.append(lib_target[VhdlInfo].data)
-        elif VerilogInfo in lib_target:
-            transitive.append(lib_target[VerilogInfo].srcs)
-            transitive.append(lib_target[VerilogInfo].data)
-        else:
-            fail("Library target `{}` provides neither VhdlInfo nor VerilogInfo.".format(
-                lib_target.label,
-            ))
-    return depset(transitive = transitive)
 
 def riviera_compile(ctx, simulator, libraries, sim_opts):
     """Stage HDL sources for a Riviera-PRO simulation under VUnit.
@@ -50,7 +33,7 @@ def riviera_compile(ctx, simulator, libraries, sim_opts):
         fail("vunit_riviera_sim requires a vsim binary")
 
     return VUnitSimOutputInfo(
-        runfiles = ctx.runfiles(transitive_files = _gather_library_sources(libraries)),
+        runfiles = ctx.runfiles(transitive_files = gather_library_sources(libraries)),
         sim_env = {"VUNIT_SIMULATOR": "rivierapro"},
         test_args = list(sim_opts),
         build_args = [],

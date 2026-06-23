@@ -1,0 +1,44 @@
+Use `.absolute()` instead of `.resolve()` for `VHDL_PATH` / `VERILOG_PATH`.
+
+`.resolve()` follows symlinks. Under Bazel-sandboxed test actions,
+the `vunit_hdl` package is staged into the action's runfiles tree as
+a symlink pointing at the underlying `~/.cache/bazel/.../external/...`
+cache. Resolving the symlink escapes the runfiles sandbox into a
+location that is not part of the action's declared inputs;
+sandboxing strategies that hide files outside the runfiles tree
+(notably the linux processwrapper) then make the resolved path
+unreadable from inside the action, breaking SV / VHDL builtin source
+registration and the dep-scanner's include-path resolution.
+
+`.absolute()` gives an absolute path WITHOUT following symlinks, so
+the returned path stays inside the sandbox view (typically
+`<runfiles>/+http_archive+vunit_hdl/vunit/{vhdl,verilog}` under
+bzlmod). Native, non-Bazel installs of VUnit see no behaviour change
+— the absolute form of a non-symlinked path matches its resolved
+form.
+
+A separate concern handled by the rules_vunit driver
+(`tools/rules_vunit_run/rules_vunit_run.py:ensure_vunit_verilog_path_is_plus_free`):
+Bazel's bzlmod external-repo prefix `+http_archive+...` contains
+literal `+` characters, which Aldec vlog treats as list separators
+in `+incdir+`/`+define+` arguments. The driver detects this and
+stages the SV builtin tree to a `+`-free location, then rebinds
+`VERILOG_PATH` to the staged copy before `add_verilog_builtins()`
+runs. VHDL has no analogous `+`-separated CLI syntax, so VHDL_PATH
+only needs the sandbox-escape fix here, not the `+`-staging.
+
+Drop this patch when VUnit upstream switches to `.absolute()` (or a
+sandbox-safe equivalent).
+
+--- a/vunit/builtins.py
++++ b/vunit/builtins.py
+@@ -20,7 +20,7 @@
+ LOGGER = logging.getLogger(__name__)
+
+-VHDL_PATH = (Path(__file__).parent / "vhdl").resolve()
+-VERILOG_PATH = (Path(__file__).parent / "verilog").resolve()
++VHDL_PATH = (Path(__file__).parent / "vhdl").absolute()
++VERILOG_PATH = (Path(__file__).parent / "verilog").absolute()
+
+
+ class Builtins(object):
