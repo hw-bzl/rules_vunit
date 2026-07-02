@@ -42,76 +42,95 @@ def _build_libraries_from_module(module):
     `my_helpers.svh`) are staged into the test action's runfiles
     alongside the corresponding source.
 
-    Each reachable `VhdlInfo` contributes its sources under its own
-    `library` field (falling back to `"work"` — the VHDL default — when
-    unset). Verilog has no equivalent per-target library; all reachable
-    `VerilogInfo` sources land in the module's own VHDL `library` when
-    `module` is a `vhdl_library` (so a mixed-language testbench compiles
-    everything into one library by default), otherwise `"work"`.
-    `VerilogInfo.includes` (the include search paths populated by
-    `verilog_library` from its `hdrs`' parent directories and explicit
-    `includes`) flow through to the per-library `verilog_include_dirs`
-    so the driver can pass them to `add_source_file(include_dirs=...)`
-    at compile time — without this, an SV `include` directive
-    targeting a transitive header library silently fails to resolve.
+    Every reachable `VhdlInfo` / `VerilogInfo` contributes its sources
+    under its own `library` field (falling back to `"work"` when unset).
+    The walk visits:
+      * `module[VhdlInfo]` if present — plus its transitive `deps`
+        (same-language) and `verilog_deps` (cross-language, added by
+        the hdl_library-elimination refactor).
+      * `module[VerilogInfo]` if present — plus its transitive `deps`
+        and `vhdl_deps`.
+    A rule that has both providers (rare — the plugin-emitted rules
+    only carry one) shows up in both halves; per-info sources are
+    grouped by that node's own `library`, so no cross-contamination.
 
-    `VhdlInfo.deps` and `VerilogInfo.deps` are already transitive
-    depsets of their respective providers — no aspect needed; the
-    rules populate the full DAG.
+    `VerilogInfo.includes` (populated by `verilog_library` from its
+    `hdrs`' parent directories and explicit `includes`) flow through to
+    the per-library `verilog_include_dirs` so the driver can pass them
+    to `add_source_file(include_dirs=...)` at compile time — without
+    this, an SV `include` directive targeting a transitive header
+    library silently fails to resolve.
+
+    `VhdlInfo.deps` / `VerilogInfo.deps` and the cross-language
+    `verilog_deps` / `vhdl_deps` are already transitive depsets — no
+    aspect needed; the rules populate the full DAG.
     """
     grouped = {}
     source_depsets = []
 
-    verilog_lib_name = "work"
-
+    # Aggregate every reachable per-language provider into two lists.
+    # Cross-language edges: a VhdlInfo's `verilog_deps` transitively
+    # pulls in Verilog nodes, and a VerilogInfo's `vhdl_deps` pulls in
+    # VHDL nodes — that's what replaces the old `hdl_library` mediator.
+    vhdl_infos = []
+    verilog_infos = []
     if VhdlInfo in module:
-        info = module[VhdlInfo]
-        if info.library:
-            verilog_lib_name = info.library
-
-        # `.deps` is the TRANSITIVE depset; appending the root's own info
-        # picks up its direct sources too.
-        for v in info.deps.to_list() + [info]:
-            lib_name = v.library or "work"
-            entry = grouped.setdefault(lib_name, {
-                "verilog_include_dirs": [],
-                "verilog_sources": [],
-                "vhdl_sources": [],
-            })
-            source_depsets.append(v.srcs)
-            source_depsets.append(v.data)
-            for f in v.srcs.to_list():
-                entry["vhdl_sources"].append(f)
-
+        vhdl_info = module[VhdlInfo]
+        # `.deps` is the TRANSITIVE VHDL chain; appending the root picks
+        # up its own srcs too.
+        vhdl_infos.extend(vhdl_info.deps.to_list())
+        vhdl_infos.append(vhdl_info)
+        # Cross-language: the Verilog dep chain reached FROM VHDL.
+        verilog_infos.extend(vhdl_info.verilog_deps.to_list())
     if VerilogInfo in module:
-        info = module[VerilogInfo]
-        entry = grouped.setdefault(verilog_lib_name, {
+        verilog_info = module[VerilogInfo]
+        verilog_infos.extend(verilog_info.deps.to_list())
+        verilog_infos.append(verilog_info)
+        # Cross-language: the VHDL dep chain reached FROM Verilog.
+        vhdl_infos.extend(verilog_info.vhdl_deps.to_list())
+
+    for v in vhdl_infos:
+        lib_name = v.library or "work"
+        entry = grouped.setdefault(lib_name, {
             "verilog_include_dirs": [],
             "verilog_sources": [],
             "vhdl_sources": [],
         })
+        source_depsets.append(v.srcs)
+        source_depsets.append(v.data)
+        for f in v.srcs.to_list():
+            entry["vhdl_sources"].append(f)
 
-        # Order-preserving dedup of include dirs: SV `+incdir+` is
-        # first-match-wins, and the walk visits `info` FIRST so the
-        # module's own dirs win over a same-named header reached
-        # transitively. Starlark has no `set`; a dict keyed by the
-        # value is the conventional shape.
+    # Order-preserving dedup of include dirs across the whole Verilog
+    # walk: SV `+incdir+` is first-match-wins, so preserving the visit
+    # order matters. `verilog_infos` is deps-first / root-last (each
+    # `verilog_info.deps.to_list()` is postorder, then the root is
+    # appended), so a dep-side include dir wins on ties with a
+    # same-named root include dir. In practice collisions are rare —
+    # `hdr_includes` is `f.dirname for f in ctx.files.hdrs` and
+    # different packages produce different dirnames — but the ordering
+    # is deterministic across a rebuild.
+    for v in verilog_infos:
+        lib_name = v.library or "work"
+        entry = grouped.setdefault(lib_name, {
+            "verilog_include_dirs": [],
+            "verilog_sources": [],
+            "vhdl_sources": [],
+        })
+        source_depsets.append(v.srcs)
+        source_depsets.append(v.data)
+        # Verilog `hdrs` (`.vh`/`.svh`) are textually included by SV
+        # preprocessor at compile time, not separately compiled. They
+        # must be in the action's runfiles AND on the include search
+        # path (see `verilog_include_dirs` below).
+        source_depsets.append(v.hdrs)
+        for f in v.srcs.to_list():
+            entry["verilog_sources"].append(f)
         seen = {d: None for d in entry["verilog_include_dirs"]}
-        for v in [info] + info.deps.to_list():
-            source_depsets.append(v.srcs)
-            source_depsets.append(v.data)
-
-            # Verilog `hdrs` (`.vh`/`.svh`) are textually included by
-            # SV preprocessor at compile time, not separately compiled.
-            # They must be in the action's runfiles AND on the include
-            # search path (see `verilog_include_dirs` below).
-            source_depsets.append(v.hdrs)
-            for f in v.srcs.to_list():
-                entry["verilog_sources"].append(f)
-            for d in v.includes.to_list():
-                if d not in seen:
-                    seen[d] = None
-                    entry["verilog_include_dirs"].append(d)
+        for d in v.includes.to_list():
+            if d not in seen:
+                seen[d] = None
+                entry["verilog_include_dirs"].append(d)
 
     return grouped, depset(transitive = source_depsets)
 
